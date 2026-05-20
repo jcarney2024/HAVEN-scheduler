@@ -1033,3 +1033,118 @@ app.post("/requests/:id/withdraw", async (c) => {
 
   return c.json({ id, status: "Withdrawn" });
 });
+
+app.post("/requests/for-dept/:deptId", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const deptId = c.req.param("deptId");
+  const { callerNetid, callerEmail } = (await c.req.json()) as {
+    callerNetid?: string; callerEmail?: string;
+  };
+  if (!callerNetid || !callerEmail) return c.json({ error: "Missing callerNetid / callerEmail" }, 400);
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const allRoster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const manageable = manageableDeptIdsFor(allRoster, person.id);
+  if (!manageable.has(deptId)) return c.json({ error: "Not authorized" }, 403);
+
+  const requests = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `FIND('${escapeFormulaString(deptId)}', ARRAYJOIN({Department})) > 0`,
+  });
+
+  const referencedIds = new Set<string>();
+  for (const r of requests) {
+    toIdList(r.fields.Requester).forEach((x) => referencedIds.add(x));
+    toIdList(r.fields.Target).forEach((x) => referencedIds.add(x));
+    toIdList(r.fields.Resolver).forEach((x) => referencedIds.add(x));
+  }
+  const allPeople = await listAll<AllPeopleFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+  });
+  const peopleById = new Map<string, AllPeopleFields & { id: string }>();
+  for (const p of allPeople) {
+    if (referencedIds.has(p.id)) peopleById.set(p.id, { ...p.fields, id: p.id });
+  }
+
+  const dept = allRoster.find((r) => r.id === deptId);
+  const scheduleRows = dept ? await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+    filterByFormula: `{Department} = '${escapeFormulaString(dept.fields["Department Name"] ?? "")}'`,
+  }) : [];
+  const scheduleByDate = new Map<string, { directors: string[]; volunteers: string[] }>();
+  for (const row of scheduleRows) {
+    const iso = normalizeVolunteerDate(selectName(row.fields.Date));
+    if (!iso) continue;
+    scheduleByDate.set(iso, {
+      directors: toIdList(row.fields["Directors on Shift"]),
+      volunteers: toIdList(row.fields["Volunteers on Shift"]),
+    });
+  }
+
+  function shape(r: AirtableRecord<ShiftRequestFields>) {
+    const requesterId = toIdList(r.fields.Requester)[0] ?? "";
+    const targetId = toIdList(r.fields.Target)[0] ?? null;
+    const resolverId = toIdList(r.fields.Resolver)[0] ?? null;
+    const requesterIso = normalizeVolunteerDate(selectName(r.fields["Requester Date"]));
+    const targetIso = r.fields["Target Date"]
+      ? normalizeVolunteerDate(selectName(r.fields["Target Date"]))
+      : null;
+
+    let role: "director" | "volunteer" = "volunteer";
+    if (requesterIso) {
+      const row = scheduleByDate.get(requesterIso);
+      if (row?.directors.includes(requesterId)) role = "director";
+    }
+
+    const requesterPerson = peopleById.get(requesterId);
+    const targetPerson = targetId ? peopleById.get(targetId) : null;
+    const resolverPerson = resolverId ? peopleById.get(resolverId) : null;
+
+    return {
+      id: r.id,
+      type: targetId ? ("Named swap" as const) : ("Drop" as const),
+      requester: {
+        id: requesterId,
+        name: requesterPerson?.Name ?? "",
+        netid: requesterPerson?.NetID ?? "",
+        role,
+      },
+      requesterDate: requesterIso ?? "",
+      target: targetPerson ? {
+        id: targetId as string,
+        name: targetPerson.Name ?? "",
+        netid: targetPerson.NetID ?? "",
+      } : null,
+      targetDate: targetIso,
+      note: r.fields.Note ?? "",
+      status: selectName(r.fields.Status) as "Pending" | "Approved" | "Rejected" | "Withdrawn",
+      submittedAt: r.fields["Submitted At"] ?? "",
+      resolvedAt: r.fields["Resolved At"] ?? null,
+      resolver: resolverPerson ? { id: resolverId as string, name: resolverPerson.Name ?? "" } : null,
+    };
+  }
+
+  const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const pending = requests.filter((r) => selectName(r.fields.Status) === "Pending").map(shape);
+  const recent = requests
+    .filter((r) => {
+      const s = selectName(r.fields.Status);
+      if (s === "Pending") return false;
+      const t = r.fields["Resolved At"];
+      return t ? new Date(t).getTime() >= fourteenDaysAgo : false;
+    })
+    .map(shape)
+    .sort((a, b) => (b.resolvedAt ?? "").localeCompare(a.resolvedAt ?? ""));
+
+  return c.json({ pending, recent });
+});

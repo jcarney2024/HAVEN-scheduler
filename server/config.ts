@@ -4,6 +4,7 @@ export type Config = {
   su26RosterTableId: string;
   su26ScheduleTableId: string;
   su26RemovalLogTableId: string;
+  su26ShiftRequestsTableId: string;
   directorAppsBaseId: string;
   directorAppsTableId: string;
   directorAppsStaffTableId: string;
@@ -19,6 +20,7 @@ export function loadConfig(): Config | null {
     su26RosterTableId: process.env.SU26_ROSTER_TABLE_ID,
     su26ScheduleTableId: process.env.SU26_SCHEDULE_TABLE_ID,
     su26RemovalLogTableId: process.env.SU26_REMOVAL_LOG_TABLE_ID,
+    su26ShiftRequestsTableId: process.env.SU26_SHIFT_REQUESTS_TABLE_ID,
     directorAppsBaseId: process.env.DIRECTOR_APPS_BASE_ID,
     directorAppsTableId: process.env.DIRECTOR_APPS_TABLE_ID,
     directorAppsStaffTableId: process.env.DIRECTOR_APPS_STAFF_TABLE_ID,

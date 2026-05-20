@@ -14,27 +14,28 @@ type AllPeopleFields = {
 
 type Su26RosterFields = {
   "Department Name"?: string;
-  Directors?: { id: string; name: string }[] | string[];
-  "Schedule Status"?: { id: string; name: string } | string;
+  Directors?: unknown;
+  Volunteers?: unknown;
+  "Schedule Status"?: unknown;
   "Submitted At"?: string;
-  "Submitted By"?: { id: string; name: string }[] | string[];
+  "Submitted By"?: unknown;
 };
 
 type DirectorAppFields = {
   "Yale NetID"?: string;
-  "What is your spring availability?"?: { id: string; name: string }[] | string[];
+  "What is your spring availability?"?: unknown;
 };
 
 type VolunteerAppFields = {
   NetID?: string;
-  "General Availability"?: { id: string; name: string }[] | string[];
+  "General Availability"?: unknown;
 };
 
 type ScheduleRowFields = {
-  Department?: { id: string; name: string }[] | string[];
-  Date?: { id: string; name: string } | string;
-  "Directors on Shift"?: { id: string; name: string }[] | string[];
-  "Volunteers on Shift"?: { id: string; name: string }[] | string[];
+  Department?: unknown;
+  Date?: unknown;
+  "Directors on Shift"?: unknown;
+  "Volunteers on Shift"?: unknown;
 };
 
 export const app = new Hono();
@@ -43,6 +44,33 @@ app.use("*", logger());
 
 async function getConfig(): Promise<Config | null> {
   return loadConfig();
+}
+
+// Airtable's REST API returns linked record fields as bare string[] (record IDs).
+// Some other tooling returns [{id, name}, ...]. Accept both shapes.
+function toIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === "string" ? v : (v as { id?: string }).id ?? ""))
+    .filter((s): s is string => !!s);
+}
+
+// multipleSelects in the REST API return string[] (option names). MCP returns
+// [{id, name, color}, ...]. Accept both.
+function toNameList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === "string" ? v : (v as { name?: string }).name ?? ""))
+    .filter((s): s is string => !!s);
+}
+
+// singleSelect in REST returns a string; MCP returns {id, name, color}.
+function selectName(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "name" in value) {
+    return String((value as { name: unknown }).name ?? "");
+  }
+  return "";
 }
 
 async function findPerson(config: Config, netid: string, email: string) {
@@ -63,18 +91,7 @@ async function findDepartmentsForDirector(config: Config, personId: string) {
     baseId: config.haveNManagementBaseId,
     tableId: config.su26RosterTableId,
   });
-  return allDepts.filter((d) => {
-    const dirs = d.fields.Directors as { id: string }[] | undefined;
-    return Array.isArray(dirs) && dirs.some((ref) => ref.id === personId);
-  });
-}
-
-function selectName(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "name" in value) {
-    return String((value as { name: unknown }).name ?? "");
-  }
-  return "";
+  return allDepts.filter((d) => toIdList(d.fields.Directors).includes(personId));
 }
 
 app.post(`/director/:netid`, async (c) => {
@@ -99,17 +116,12 @@ app.post(`/director/:netid`, async (c) => {
       netid: person.fields.NetID ?? "",
       email: person.fields["Contact Email"] ?? "",
     },
-    departments: depts.map((d) => {
-      const status = d.fields["Schedule Status"];
-      const statusName =
-        typeof status === "string" ? status : status?.name ?? "Draft";
-      return {
-        id: d.id,
-        name: d.fields["Department Name"] ?? "",
-        scheduleStatus: statusName,
-        submittedAt: d.fields["Submitted At"] ?? null,
-      };
-    }),
+    departments: depts.map((d) => ({
+      id: d.id,
+      name: d.fields["Department Name"] ?? "",
+      scheduleStatus: selectName(d.fields["Schedule Status"]) || "Draft",
+      submittedAt: d.fields["Submitted At"] ?? null,
+    })),
   });
 });
 
@@ -151,35 +163,39 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const dept = allRoster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  const deptDirectors = dept.fields.Directors as { id: string; name: string }[] | undefined;
-  const callerIsDeptDirector = (deptDirectors ?? []).some((d) => d.id === caller.id);
+  const callerIsDeptDirector = toIdList(dept.fields.Directors).includes(caller.id);
 
-  // build a NetID → ISO[] availability lookup, for both kinds
+  // dept name lookup for ScheduleEntry construction
+  const deptNameById = new Map<string, string>(
+    allRoster.map((d) => [d.id, d.fields["Department Name"] ?? ""])
+  );
+
+  // build NetID → ISO[] availability lookups
   const directorAvail = new Map<string, string[]>();
   for (const r of allDirectorApps) {
     const nid = (r.fields["Yale NetID"] ?? "").toLowerCase();
     if (!nid) continue;
-    const dates = (r.fields["What is your spring availability?"] ?? []) as { name?: string }[];
+    const names = toNameList(r.fields["What is your spring availability?"]);
     directorAvail.set(
       nid,
-      dates.map((d) => normalizeDirectorDate(d.name ?? "")).filter((x): x is string => !!x),
+      names.map((n) => normalizeDirectorDate(n)).filter((x): x is string => !!x),
     );
   }
   const volAvail = new Map<string, string[]>();
   for (const r of allVolunteerApps) {
     const nid = (r.fields.NetID ?? "").toLowerCase();
     if (!nid) continue;
-    const dates = (r.fields["General Availability"] ?? []) as { name?: string }[];
+    const names = toNameList(r.fields["General Availability"]);
     volAvail.set(
       nid,
-      dates.map((d) => normalizeVolunteerDate(d.name ?? "")).filter((x): x is string => !!x),
+      names.map((n) => normalizeVolunteerDate(n)).filter((x): x is string => !!x),
     );
   }
 
-  // fetch All People records for everyone on this dept's roster (one batch)
-  const dirRefs = (dept.fields.Directors as { id: string }[] | undefined) ?? [];
-  const volRefs = ((dept.fields as Record<string, unknown>)["Volunteers"] as { id: string }[] | undefined) ?? [];
-  const allIds = [...dirRefs.map((r) => r.id), ...volRefs.map((r) => r.id)];
+  // fetch All People for everyone on this dept's roster (one batch)
+  const dirIds = toIdList(dept.fields.Directors);
+  const volIds = toIdList(dept.fields.Volunteers);
+  const allIds = [...dirIds, ...volIds];
   const people = allIds.length
     ? await listAll<AllPeopleFields>({
         baseId: config.haveNManagementBaseId,
@@ -191,18 +207,17 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const scheduleEntries: ScheduleEntry[] = allSchedule
     .map((row): ScheduleEntry | null => {
-      const deptRef = (row.fields.Department as { id: string; name?: string }[] | undefined)?.[0];
+      const deptRefIds = toIdList(row.fields.Department);
+      const deptRefId = deptRefIds[0];
       const dateName = selectName(row.fields.Date);
       const iso = normalizeVolunteerDate(dateName);
-      if (!deptRef || !iso) return null;
-      const dirs = (row.fields["Directors on Shift"] as { id: string }[] | undefined) ?? [];
-      const vols = (row.fields["Volunteers on Shift"] as { id: string }[] | undefined) ?? [];
+      if (!deptRefId || !iso) return null;
       return {
         date: iso,
-        departmentId: deptRef.id,
-        departmentName: deptRef.name ?? "",
-        directorIds: dirs.map((r) => r.id),
-        volunteerIds: vols.map((r) => r.id),
+        departmentId: deptRefId,
+        departmentName: deptNameById.get(deptRefId) ?? "",
+        directorIds: toIdList(row.fields["Directors on Shift"]),
+        volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
       };
     })
     .filter((x): x is ScheduleEntry => !!x);
@@ -222,21 +237,15 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const scheduleStatus = selectName(dept.fields["Schedule Status"]) || "Draft";
 
-  const deptSchedule = allSchedule.filter((row) => {
-    const refs = row.fields.Department as { id: string }[] | undefined;
-    return Array.isArray(refs) && refs.some((r) => r.id === deptId);
-  });
-
   const assignmentsByDate = new Map<string, { directorIds: string[]; volunteerIds: string[] }>();
-  for (const row of deptSchedule) {
+  for (const row of allSchedule) {
+    if (!toIdList(row.fields.Department).includes(deptId)) continue;
     const dateName = selectName(row.fields.Date);
     const iso = normalizeVolunteerDate(dateName);
     if (!iso) continue;
-    const dirs = (row.fields["Directors on Shift"] as { id: string }[] | undefined) ?? [];
-    const vols = (row.fields["Volunteers on Shift"] as { id: string }[] | undefined) ?? [];
     assignmentsByDate.set(iso, {
-      directorIds: dirs.map((r) => r.id),
-      volunteerIds: vols.map((r) => r.id),
+      directorIds: toIdList(row.fields["Directors on Shift"]),
+      volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
     });
   }
 
@@ -250,8 +259,8 @@ app.post(`/schedule/:deptId`, async (c) => {
     },
     dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
     roster: {
-      directors: dirRefs.map((r) => buildPerson(r.id, "director")),
-      volunteers: volRefs.map((r) => buildPerson(r.id, "volunteer")),
+      directors: dirIds.map((id) => buildPerson(id, "director")),
+      volunteers: volIds.map((id) => buildPerson(id, "volunteer")),
     },
     assignments: CANONICAL_DATES.map((iso) => ({
       date: iso,
@@ -287,10 +296,9 @@ app.post("/assignment", async (c) => {
   const dept = roster.find((r) => r.id === departmentId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
 
-  const isDir = (dept.fields.Directors as { id: string }[] | undefined)?.some(
-    (d) => d.id === caller.id,
-  );
-  if (!isDir) return c.json({ error: "Caller not a director on this department" }, 403);
+  if (!toIdList(dept.fields.Directors).includes(caller.id)) {
+    return c.json({ error: "Caller not a director on this department" }, 403);
+  }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
   if (statusName === "Submitted") {
@@ -303,13 +311,10 @@ app.post("/assignment", async (c) => {
     tableId: config.su26ScheduleTableId,
   });
   const existing = all.find((row) => {
-    const refs = row.fields.Department as { id: string }[] | undefined;
-    if (!refs?.some((r) => r.id === departmentId)) return false;
-    const dn = selectName(row.fields.Date);
-    return normalizeVolunteerDate(dn) === date;
+    if (!toIdList(row.fields.Department).includes(departmentId)) return false;
+    return normalizeVolunteerDate(selectName(row.fields.Date)) === date;
   });
 
-  // map ISO back to the singleSelect option name (e.g. "May 30th")
   const dateName = displayDate(date);
   const deptName = dept.fields["Department Name"] ?? "";
 
@@ -360,10 +365,9 @@ app.post("/submit/:deptId", async (c) => {
   });
   const dept = roster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  const isDir = (dept.fields.Directors as { id: string }[] | undefined)?.some(
-    (d) => d.id === caller.id,
-  );
-  if (!isDir) return c.json({ error: "Not a director on this department" }, 403);
+  if (!toIdList(dept.fields.Directors).includes(caller.id)) {
+    return c.json({ error: "Not a director on this department" }, 403);
+  }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
   if (statusName === "Submitted") return c.json({ error: "Already submitted" }, 409);

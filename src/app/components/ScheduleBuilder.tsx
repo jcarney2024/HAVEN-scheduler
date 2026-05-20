@@ -9,7 +9,9 @@ import { SaturdayView } from "./schedule/SaturdayView";
 import { GridView } from "./schedule/GridView";
 import { SubmittedView } from "./SubmittedView";
 import { SubmitModal } from "./schedule/SubmitModal";
+import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
+import type { Person } from "@/api/types";
 
 export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [selectedDeptId, setSelectedDeptId] = useState(identity.departments[0]?.id ?? "");
@@ -22,6 +24,8 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
 
   const reload = useCallback(() => {
     if (!selectedDeptId) return;
@@ -183,6 +187,30 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     }
   }
 
+  async function handleConfirmRemove() {
+    if (!data || !removeTarget) return;
+    setRemoveLoading(true);
+    try {
+      const res = await api.removeVolunteer({
+        callerNetid: identity.person.netid,
+        callerEmail: identity.person.email,
+        departmentId: data.department.id,
+        personId: removeTarget.id,
+      });
+      const note =
+        res.unscheduledCount > 0
+          ? ` and unscheduled from ${res.unscheduledCount} Saturday${res.unscheduledCount === 1 ? "" : "s"}`
+          : "";
+      toast.success(`${removeTarget.name || removeTarget.netid} removed from ${data.department.name}${note}.`);
+      setRemoveTarget(null);
+      reload();
+    } catch (e) {
+      toast.error((e as Error).message || "Couldn't remove volunteer.");
+    } finally {
+      setRemoveLoading(false);
+    }
+  }
+
   function formatSavedAt(d: Date | null): string {
     if (!d) return "";
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -272,6 +300,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           disabled={submitted || !data.callerIsDeptDirector}
           editMode={editMode}
           onToggle={handleToggle}
+          onRemoveVolunteer={
+            submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
+          }
         />
       ) : (
         <GridView
@@ -282,6 +313,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           disabled={submitted || !data.callerIsDeptDirector}
           editMode={editMode}
           onToggle={handleToggle}
+          onRemoveVolunteer={
+            submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
+          }
         />
       )}
 
@@ -310,6 +344,14 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         loading={submitLoading}
         onCancel={() => setSubmitOpen(false)}
         onConfirm={handleSubmit}
+      />
+      <RemoveVolunteerModal
+        open={!!removeTarget}
+        personName={removeTarget ? removeTarget.name || removeTarget.netid : ""}
+        deptName={data.department.name}
+        loading={removeLoading}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={handleConfirmRemove}
       />
     </div>
   );

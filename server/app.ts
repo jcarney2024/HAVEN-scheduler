@@ -571,3 +571,75 @@ app.post("/availability", async (c) => {
 
   return c.json({ success: true });
 });
+
+app.post("/remove-volunteer", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    departmentId?: string;
+    personId?: string;
+  };
+  const { callerNetid, callerEmail, departmentId, personId } = body;
+  if (!callerNetid || !callerEmail || !departmentId || !personId) {
+    return c.json({ error: "Missing required field" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = roster.find((r) => r.id === departmentId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+
+  const isAuthorized =
+    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
+  if (!isAuthorized) {
+    return c.json({ error: "Not authorized for this department" }, 403);
+  }
+
+  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
+  if (statusName === "Submitted") {
+    return c.json({ error: "Schedule already submitted — unlock first" }, 409);
+  }
+
+  // 1. Strip the person from the dept's Volunteers list.
+  const newVols = toIdList(dept.fields.Volunteers).filter((id) => id !== personId);
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+    recordId: dept.id,
+    fields: { Volunteers: newVols },
+  });
+
+  // 2. Strip them from every SU 26 Schedule row for this dept where they're
+  // listed as a Volunteer on Shift.
+  const schedule = await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+  });
+  const affected = schedule.filter((row) => {
+    if (!toIdList(row.fields.Department).includes(departmentId)) return false;
+    return toIdList(row.fields["Volunteers on Shift"]).includes(personId);
+  });
+  await Promise.all(
+    affected.map((row) =>
+      patchRecord({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26ScheduleTableId,
+        recordId: row.id,
+        fields: {
+          "Volunteers on Shift": toIdList(row.fields["Volunteers on Shift"]).filter(
+            (id) => id !== personId,
+          ),
+        },
+      }),
+    ),
+  );
+
+  return c.json({ success: true, unscheduledCount: affected.length });
+});

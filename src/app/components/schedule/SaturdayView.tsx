@@ -12,6 +12,7 @@ export function SaturdayView({
   disabled,
   editMode,
   onToggle,
+  onRemoveVolunteer,
 }: {
   dates: { iso: string; display: string }[];
   directors: Person[];
@@ -20,6 +21,7 @@ export function SaturdayView({
   disabled: boolean;
   editMode: "assign" | "availability";
   onToggle: (date: string, kind: Kind, personId: string) => void;
+  onRemoveVolunteer?: (person: Person) => void;
 }) {
   const [activeIso, setActiveIso] = useState(dates[0]?.iso ?? "");
   const assignmentByIso = useMemo(
@@ -34,6 +36,10 @@ export function SaturdayView({
   }
 
   function column(title: string, people: Person[], kind: Kind, assignedIds: string[]) {
+    // Per-row remove handler — volunteers only, never directors.
+    const removeFor = (p: Person) =>
+      kind === "volunteer" && onRemoveVolunteer ? () => onRemoveVolunteer(p) : undefined;
+
     if (editMode === "availability") {
       // Show everyone, checkbox = availability for active date.
       return (
@@ -51,6 +57,7 @@ export function SaturdayView({
                 disabled={disabled}
                 editMode="availability"
                 onToggle={() => onToggle(activeIso, kind, p.id)}
+                onRemove={removeFor(p)}
               />
             ))}
           </div>
@@ -77,6 +84,7 @@ export function SaturdayView({
               disabled={disabled}
               editMode="assign"
               onToggle={() => onToggle(activeIso, kind, p.id)}
+              onRemove={removeFor(p)}
             />
           ))}
         </div>
@@ -95,6 +103,7 @@ export function SaturdayView({
                   disabled={disabled}
                   editMode="assign"
                   onToggle={() => onToggle(activeIso, kind, p.id)}
+                  onRemove={removeFor(p)}
                 />
               ))}
             </div>

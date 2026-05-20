@@ -62,4 +62,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  removeVolunteer: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    departmentId: string;
+    personId: string;
+  }) =>
+    request<{ success: true; unscheduledCount: number }>("/remove-volunteer", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

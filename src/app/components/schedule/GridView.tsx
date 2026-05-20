@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { X } from "lucide-react";
 import type { Assignment, Person } from "@/api/types";
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
   disabled: boolean;
   editMode: "assign" | "availability";
   onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
+  onRemoveVolunteer?: (person: Person) => void;
 };
 
 function splitDisplay(display: string): { month: string; day: string } {
@@ -26,6 +28,7 @@ export function GridView({
   disabled,
   editMode,
   onToggle,
+  onRemoveVolunteer,
 }: Props) {
   const byDate = useMemo(
     () => Object.fromEntries(assignments.map((a) => [a.date, a])),
@@ -84,14 +87,28 @@ export function GridView({
   }
 
   function row(person: Person, kind: "director" | "volunteer") {
+    const canRemove = kind === "volunteer" && !!onRemoveVolunteer && !disabled;
     return (
-      <tr key={person.id} className="border-b border-slate-100 last:border-b-0">
+      <tr key={person.id} className="group border-b border-slate-100 last:border-b-0">
         <th
           scope="row"
-          className="text-left sticky left-0 bg-white pr-4 py-1 text-sm font-normal whitespace-nowrap min-w-[160px] max-w-[200px] truncate"
+          className="text-left sticky left-0 bg-white pr-2 py-1 text-sm font-normal whitespace-nowrap min-w-[160px] max-w-[220px]"
           title={person.name || person.netid}
         >
-          {person.name || person.netid}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate flex-1">{person.name || person.netid}</span>
+            {canRemove && (
+              <button
+                type="button"
+                onClick={() => onRemoveVolunteer!(person)}
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-slate-400 hover:text-red-600 p-0.5"
+                title="Remove from department"
+                aria-label="Remove from department"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </th>
         {dates.map((d) => (
           <td key={d.iso} className="text-center px-0.5">

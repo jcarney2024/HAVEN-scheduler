@@ -8,6 +8,7 @@ import { ViewToggle, type ViewMode } from "./schedule/ViewToggle";
 import { SaturdayView } from "./schedule/SaturdayView";
 import { GridView } from "./schedule/GridView";
 import { SubmittedView } from "./SubmittedView";
+import { SubmitModal } from "./schedule/SubmitModal";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 
 export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
@@ -16,6 +17,8 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
   const [saving, setSaving] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
 
   const reload = useCallback(() => {
     if (!selectedDeptId) return;
@@ -102,6 +105,28 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
 
   const submitted = data.department.scheduleStatus === "Submitted";
 
+  const totalShifts = data.assignments.reduce(
+    (sum, a) => sum + a.directorIds.length + a.volunteerIds.length,
+    0,
+  );
+  const emptyDays = data.assignments.filter(
+    (a) => a.directorIds.length === 0 && a.volunteerIds.length === 0,
+  ).length;
+
+  async function handleSubmit() {
+    setSubmitLoading(true);
+    try {
+      await api.submit(data!.department.id, identity.person.netid, identity.person.email);
+      toast.success("Schedule submitted.");
+      setSubmitOpen(false);
+      reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSubmitLoading(false);
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -149,6 +174,26 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           onToggle={handleToggle}
         />
       )}
+
+      {!submitted && data.callerIsDeptDirector && (
+        <div className="flex justify-end pt-4 border-t border-slate-200">
+          <button
+            onClick={() => setSubmitOpen(true)}
+            className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
+          >
+            Submit term schedule
+          </button>
+        </div>
+      )}
+      <SubmitModal
+        open={submitOpen}
+        deptName={data.department.name}
+        totalShifts={totalShifts}
+        emptyDays={emptyDays}
+        loading={submitLoading}
+        onCancel={() => setSubmitOpen(false)}
+        onConfirm={handleSubmit}
+      />
     </div>
   );
 }

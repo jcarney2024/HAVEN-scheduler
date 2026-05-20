@@ -8,6 +8,7 @@ export function PersonRow({
   isAssigned,
   disabled,
   editMode = "assign",
+  readOnly = false,
   onToggle,
   onRemove,
 }: {
@@ -16,29 +17,36 @@ export function PersonRow({
   isAssigned: boolean;
   disabled: boolean;
   editMode?: "assign" | "availability";
+  readOnly?: boolean;
   onToggle: () => void;
   /** If provided, shows a small ✕ button. Used to drop a volunteer from a dept. */
   onRemove?: () => void;
 }) {
   const accent = editMode === "availability" ? "accent-amber-500" : "accent-[#0F4D92]";
+  const interactive = !readOnly && !disabled;
+
   return (
     <label
-      className={`group flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
-        disabled ? "cursor-not-allowed opacity-50" : "hover:bg-slate-50"
-      } ${editMode === "assign" && !isAvailable ? "text-slate-500" : ""}`}
+      className={`group flex items-center gap-3 p-2 rounded-md transition-colors ${
+        interactive ? "cursor-pointer hover:bg-slate-50" : "cursor-default"
+      } ${!readOnly && disabled ? "cursor-not-allowed opacity-50" : ""} ${
+        editMode === "assign" && !isAvailable && !readOnly ? "text-slate-500" : ""
+      }`}
     >
-      <input
-        type="checkbox"
-        checked={isAssigned}
-        disabled={disabled}
-        onChange={onToggle}
-        className={`w-4 h-4 ${accent}`}
-      />
+      {!readOnly && (
+        <input
+          type="checkbox"
+          checked={isAssigned}
+          disabled={disabled}
+          onChange={onToggle}
+          className={`w-4 h-4 ${accent}`}
+        />
+      )}
       <span className="flex-1">{person.name || person.netid}</span>
-      {editMode === "assign" && !isAvailable && (
+      {!readOnly && editMode === "assign" && !isAvailable && (
         <span className="text-xs text-slate-400">not avail</span>
       )}
-      {person.availabilityOverridden && (
+      {!readOnly && person.availabilityOverridden && (
         <span
           className="text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
           title="Availability has been overridden by a director."
@@ -46,8 +54,8 @@ export function PersonRow({
           override
         </span>
       )}
-      <ConflictBadge person={person} />
-      {onRemove && (
+      {!readOnly && <ConflictBadge person={person} />}
+      {!readOnly && onRemove && (
         <button
           type="button"
           onClick={(e) => {

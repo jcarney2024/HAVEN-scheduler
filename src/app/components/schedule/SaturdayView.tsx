@@ -14,6 +14,7 @@ export function SaturdayView({
   editMode,
   onToggle,
   onRemoveVolunteer,
+  readOnly = false,
 }: {
   dates: { iso: string; display: string }[];
   directors: Person[];
@@ -23,6 +24,7 @@ export function SaturdayView({
   editMode: "assign" | "availability";
   onToggle: (date: string, kind: Kind, personId: string) => void;
   onRemoveVolunteer?: (person: Person) => void;
+  readOnly?: boolean;
 }) {
   const [activeIso, setActiveIso] = useState(dates[0]?.iso ?? "");
   const assignmentByIso = useMemo(
@@ -39,7 +41,7 @@ export function SaturdayView({
   function column(title: string, people: Person[], kind: Kind, assignedIds: string[]) {
     // Per-row remove handler — volunteers only, never directors.
     const removeFor = (p: Person) =>
-      kind === "volunteer" && onRemoveVolunteer ? () => onRemoveVolunteer(p) : undefined;
+      !readOnly && kind === "volunteer" && onRemoveVolunteer ? () => onRemoveVolunteer(p) : undefined;
 
     if (editMode === "availability") {
       // Show everyone, checkbox = availability for active date.
@@ -53,11 +55,12 @@ export function SaturdayView({
               <PersonRow
                 key={p.id}
                 person={p}
-                isAvailable={p.available.includes(activeIso)}
+                isAvailable={readOnly ? true : p.available.includes(activeIso)}
                 isAssigned={p.available.includes(activeIso)}
                 disabled={disabled}
                 editMode="availability"
-                onToggle={() => onToggle(activeIso, kind, p.id)}
+                readOnly={readOnly}
+                onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
                 onRemove={removeFor(p)}
               />
             ))}
@@ -84,7 +87,8 @@ export function SaturdayView({
               isAssigned={assignedIds.includes(p.id)}
               disabled={disabled}
               editMode="assign"
-              onToggle={() => onToggle(activeIso, kind, p.id)}
+              readOnly={readOnly}
+              onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
               onRemove={removeFor(p)}
             />
           ))}
@@ -99,11 +103,12 @@ export function SaturdayView({
                 <PersonRow
                   key={p.id}
                   person={p}
-                  isAvailable={false}
+                  isAvailable={readOnly ? true : false}
                   isAssigned={assignedIds.includes(p.id)}
                   disabled={disabled}
                   editMode="assign"
-                  onToggle={() => onToggle(activeIso, kind, p.id)}
+                  readOnly={readOnly}
+                  onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
                   onRemove={removeFor(p)}
                 />
               ))}

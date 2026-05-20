@@ -5,8 +5,10 @@ export type Config = {
   su26ScheduleTableId: string;
   directorAppsBaseId: string;
   directorAppsTableId: string;
+  directorAppsStaffTableId: string;
   volunteerAppsBaseId: string;
   volunteerAppsTableId: string;
+  volunteerAppsStaffTableId: string;
 };
 
 export function loadConfig(): Config | null {
@@ -17,8 +19,10 @@ export function loadConfig(): Config | null {
     su26ScheduleTableId: process.env.SU26_SCHEDULE_TABLE_ID,
     directorAppsBaseId: process.env.DIRECTOR_APPS_BASE_ID,
     directorAppsTableId: process.env.DIRECTOR_APPS_TABLE_ID,
+    directorAppsStaffTableId: process.env.DIRECTOR_APPS_STAFF_TABLE_ID,
     volunteerAppsBaseId: process.env.VOLUNTEER_APPS_BASE_ID,
     volunteerAppsTableId: process.env.VOLUNTEER_APPS_TABLE_ID,
+    volunteerAppsStaffTableId: process.env.VOLUNTEER_APPS_STAFF_TABLE_ID,
   };
   for (const v of Object.values(required)) {
     if (!v) return null;

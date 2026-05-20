@@ -24,11 +24,18 @@ type Su26RosterFields = {
 type DirectorAppFields = {
   "Yale NetID"?: string;
   "What is your spring availability?"?: unknown;
+  "Link your Staff Record"?: unknown;
 };
 
 type VolunteerAppFields = {
   NetID?: string;
   "General Availability"?: unknown;
+  "Link your record"?: unknown;
+};
+
+type StaffMirrorFields = {
+  NetID?: string;
+  Name?: string;
 };
 
 type ScheduleRowFields = {
@@ -167,7 +174,14 @@ app.post(`/schedule/:deptId`, async (c) => {
   const caller = await findPerson(config, callerNetid, callerEmail);
   if (!caller) return c.json({ error: "Caller not verified" }, 403);
 
-  const [allRoster, allSchedule, allDirectorApps, allVolunteerApps] = await Promise.all([
+  const [
+    allRoster,
+    allSchedule,
+    allDirectorApps,
+    allVolunteerApps,
+    directorStaff,
+    volunteerStaff,
+  ] = await Promise.all([
     listAll<Su26RosterFields>({
       baseId: config.haveNManagementBaseId,
       tableId: config.su26RosterTableId,
@@ -179,14 +193,37 @@ app.post(`/schedule/:deptId`, async (c) => {
     listAll<DirectorAppFields>({
       baseId: config.directorAppsBaseId,
       tableId: config.directorAppsTableId,
-      fields: ["Yale NetID", "What is your spring availability?"],
+      fields: ["Yale NetID", "What is your spring availability?", "Link your Staff Record"],
     }),
     listAll<VolunteerAppFields>({
       baseId: config.volunteerAppsBaseId,
       tableId: config.volunteerAppsTableId,
-      fields: ["NetID", "General Availability"],
+      fields: ["NetID", "General Availability", "Link your record"],
+    }),
+    listAll<StaffMirrorFields>({
+      baseId: config.directorAppsBaseId,
+      tableId: config.directorAppsStaffTableId,
+      fields: ["NetID"],
+    }),
+    listAll<StaffMirrorFields>({
+      baseId: config.volunteerAppsBaseId,
+      tableId: config.volunteerAppsStaffTableId,
+      fields: ["NetID"],
     }),
   ]);
+
+  // Recruitment-base "Everyone by name" tables hold the NetID; Applications
+  // records link to them via "Link your Staff Record" / "Link your record".
+  const directorStaffNetidById = new Map<string, string>(
+    directorStaff
+      .filter((s) => s.fields.NetID)
+      .map((s) => [s.id, (s.fields.NetID ?? "").toLowerCase()]),
+  );
+  const volunteerStaffNetidById = new Map<string, string>(
+    volunteerStaff
+      .filter((s) => s.fields.NetID)
+      .map((s) => [s.id, (s.fields.NetID ?? "").toLowerCase()]),
+  );
 
   const dept = allRoster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
@@ -198,10 +235,30 @@ app.post(`/schedule/:deptId`, async (c) => {
     allRoster.map((d) => [d.id, d.fields["Department Name"] ?? ""])
   );
 
+  // Resolve an application's NetID: prefer the direct field, fall back to the
+  // linked staff record's NetID. Most applicants only have the link.
+  function resolveAppNetid(
+    direct: string | undefined,
+    linkFieldValue: unknown,
+    staffNetidById: Map<string, string>,
+  ): string {
+    if (direct && direct.trim()) return direct.trim().toLowerCase();
+    const linkedIds = toIdList(linkFieldValue);
+    for (const id of linkedIds) {
+      const nid = staffNetidById.get(id);
+      if (nid) return nid;
+    }
+    return "";
+  }
+
   // build NetID → ISO[] availability lookups
   const directorAvail = new Map<string, string[]>();
   for (const r of allDirectorApps) {
-    const nid = (r.fields["Yale NetID"] ?? "").toLowerCase();
+    const nid = resolveAppNetid(
+      r.fields["Yale NetID"],
+      r.fields["Link your Staff Record"],
+      directorStaffNetidById,
+    );
     if (!nid) continue;
     const names = toNameList(r.fields["What is your spring availability?"]);
     directorAvail.set(
@@ -211,7 +268,11 @@ app.post(`/schedule/:deptId`, async (c) => {
   }
   const volAvail = new Map<string, string[]>();
   for (const r of allVolunteerApps) {
-    const nid = (r.fields.NetID ?? "").toLowerCase();
+    const nid = resolveAppNetid(
+      r.fields.NetID,
+      r.fields["Link your record"],
+      volunteerStaffNetidById,
+    );
     if (!nid) continue;
     const names = toNameList(r.fields["General Availability"]);
     volAvail.set(

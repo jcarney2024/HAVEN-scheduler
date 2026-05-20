@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { escapeFormulaString, listAll } from "./airtable";
+import { createRecord, escapeFormulaString, listAll, patchRecord } from "./airtable";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates";
 import { computeConflicts, type ScheduleEntry } from "./conflicts";
 import { loadConfig, type Config } from "./config";
@@ -259,4 +259,82 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: assignmentsByDate.get(iso)?.volunteerIds ?? [],
     })),
   });
+});
+
+app.post("/assignment", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    departmentId?: string;
+    date?: string; // ISO
+    directorIds?: string[];
+    volunteerIds?: string[];
+  };
+  const { callerNetid, callerEmail, departmentId, date } = body;
+  if (!callerNetid || !callerEmail || !departmentId || !date) {
+    return c.json({ error: "Missing required field" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = roster.find((r) => r.id === departmentId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+
+  const isDir = (dept.fields.Directors as { id: string }[] | undefined)?.some(
+    (d) => d.id === caller.id,
+  );
+  if (!isDir) return c.json({ error: "Caller not a director on this department" }, 403);
+
+  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
+  if (statusName === "Submitted") {
+    return c.json({ error: "Schedule already submitted" }, 409);
+  }
+
+  // find existing row for (dept, date)
+  const all = await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+  });
+  const existing = all.find((row) => {
+    const refs = row.fields.Department as { id: string }[] | undefined;
+    if (!refs?.some((r) => r.id === departmentId)) return false;
+    const dn = selectName(row.fields.Date);
+    return normalizeVolunteerDate(dn) === date;
+  });
+
+  // map ISO back to the singleSelect option name (e.g. "May 30th")
+  const dateName = displayDate(date);
+  const deptName = dept.fields["Department Name"] ?? "";
+
+  const fields = {
+    Name: `${deptName} — ${dateName}`,
+    Department: [departmentId],
+    Date: dateName,
+    "Directors on Shift": body.directorIds ?? [],
+    "Volunteers on Shift": body.volunteerIds ?? [],
+  };
+
+  if (existing) {
+    await patchRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ScheduleTableId,
+      recordId: existing.id,
+      fields,
+    });
+  } else {
+    await createRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ScheduleTableId,
+      fields,
+    });
+  }
+
+  return c.json({ success: true });
 });

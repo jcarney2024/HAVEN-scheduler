@@ -1,5 +1,5 @@
 const BASE = "https://api.airtable.com/v0";
-const PAT = Deno.env.get("AIRTABLE_PAT") ?? "";
+const PAT = process.env.AIRTABLE_PAT ?? "";
 
 type AirtableRecord<F = Record<string, unknown>> = {
   id: string;

@@ -1,21 +1,10 @@
-import { Hono } from "npm:hono";
-import { cors } from "npm:hono/cors";
-import { logger } from "npm:hono/logger";
-import * as kv from "./kv_store.ts";
-import { escapeFormulaString, listAll } from "./airtable.ts";
-import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.ts";
-import { computeConflicts, type ScheduleEntry } from "./conflicts.ts";
-
-type Config = {
-  haveNManagementBaseId: string;
-  allPeopleTableId: string;
-  su26RosterTableId: string;
-  su26ScheduleTableId: string;
-  directorAppsBaseId: string;
-  directorAppsTableId: string;
-  volunteerAppsBaseId: string;
-  volunteerAppsTableId: string;
-};
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { escapeFormulaString, listAll } from "./airtable";
+import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates";
+import { computeConflicts, type ScheduleEntry } from "./conflicts";
+import { loadConfig, type Config } from "./config";
 
 type AllPeopleFields = {
   NetID?: string;
@@ -48,18 +37,12 @@ type ScheduleRowFields = {
   "Volunteers on Shift"?: { id: string; name: string }[] | string[];
 };
 
-const KV_KEY = "clinic_schedule_config_v1";
-const ROUTE_PREFIX = "/make-server-clinic-schedule";
-
-const AIRTABLE_PAT = Deno.env.get("AIRTABLE_PAT") ?? "";
-
-const app = new Hono();
+export const app = new Hono();
 app.use("*", cors());
 app.use("*", logger());
 
 async function getConfig(): Promise<Config | null> {
-  const data = await kv.get(KV_KEY);
-  return data ? (data as Config) : null;
+  return loadConfig();
 }
 
 async function findPerson(config: Config, netid: string, email: string) {
@@ -86,11 +69,6 @@ async function findDepartmentsForDirector(config: Config, personId: string) {
   });
 }
 
-function nameList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((v) => (typeof v === "string" ? v : (v as { name?: string }).name ?? ""));
-}
-
 function selectName(value: unknown): string {
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && "name" in value) {
@@ -99,48 +77,7 @@ function selectName(value: unknown): string {
   return "";
 }
 
-app.get(`${ROUTE_PREFIX}/config`, async (c) => {
-  const config = await getConfig();
-  return c.json({ configured: !!config, config });
-});
-
-app.post(`${ROUTE_PREFIX}/config`, async (c) => {
-  const body = (await c.req.json()) as Partial<Config>;
-  const required: (keyof Config)[] = [
-    "haveNManagementBaseId",
-    "allPeopleTableId",
-    "su26RosterTableId",
-    "su26ScheduleTableId",
-    "directorAppsBaseId",
-    "directorAppsTableId",
-    "volunteerAppsBaseId",
-    "volunteerAppsTableId",
-  ];
-  for (const key of required) {
-    if (!body[key]) return c.json({ error: `Missing ${key}` }, 400);
-  }
-  await kv.set(KV_KEY, body);
-  return c.json({ success: true });
-});
-
-app.get(`${ROUTE_PREFIX}/bases`, async (c) => {
-  const res = await fetch("https://api.airtable.com/v0/meta/bases", {
-    headers: { Authorization: `Bearer ${AIRTABLE_PAT}` },
-  });
-  return c.json(await res.json(), res.status as 200 | 400 | 401);
-});
-
-app.post(`${ROUTE_PREFIX}/tables`, async (c) => {
-  const { baseId } = (await c.req.json()) as { baseId?: string };
-  if (!baseId) return c.json({ error: "Missing baseId" }, 400);
-  const res = await fetch(
-    `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
-    { headers: { Authorization: `Bearer ${AIRTABLE_PAT}` } },
-  );
-  return c.json(await res.json(), res.status as 200 | 400 | 401);
-});
-
-app.post(`${ROUTE_PREFIX}/director/:netid`, async (c) => {
+app.post(`/director/:netid`, async (c) => {
   const config = await getConfig();
   if (!config) return c.json({ error: "Not configured" }, 400);
   const netid = c.req.param("netid");
@@ -176,7 +113,7 @@ app.post(`${ROUTE_PREFIX}/director/:netid`, async (c) => {
   });
 });
 
-app.post(`${ROUTE_PREFIX}/schedule/:deptId`, async (c) => {
+app.post(`/schedule/:deptId`, async (c) => {
   const config = await getConfig();
   if (!config) return c.json({ error: "Not configured" }, 400);
   const deptId = c.req.param("deptId");
@@ -323,5 +260,3 @@ app.post(`${ROUTE_PREFIX}/schedule/:deptId`, async (c) => {
     })),
   });
 });
-
-Deno.serve(app.fetch);

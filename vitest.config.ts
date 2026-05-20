@@ -9,7 +9,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "src/tests/**/*.test.{ts,tsx}",
-      "supabase/functions/**/tests/**/*.test.{ts,tsx}",
+      "server/tests/**/*.test.{ts,tsx}",
     ],
   },
 });

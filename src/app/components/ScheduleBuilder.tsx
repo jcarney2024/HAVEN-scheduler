@@ -214,25 +214,20 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       )}
 
       {!submitted && data.callerIsDeptDirector && (
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
-          <p className="text-xs text-slate-500 max-w-md">
-            Changes save automatically. You can close this tab and come back later — your draft is safe.
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSaveDraft}
-              disabled={savingDraft || saving}
-              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md font-medium hover:bg-slate-50 disabled:opacity-50"
-            >
-              {savingDraft ? "Saving…" : "Save draft"}
-            </button>
-            <button
-              onClick={() => setSubmitOpen(true)}
-              className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
-            >
-              Submit term schedule
-            </button>
-          </div>
+        <div className="flex justify-end items-center gap-2 pt-4 border-t border-slate-200">
+          <button
+            onClick={handleSaveDraft}
+            disabled={savingDraft || saving}
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            {savingDraft ? "Saving…" : "Save draft"}
+          </button>
+          <button
+            onClick={() => setSubmitOpen(true)}
+            className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
+          >
+            Submit term schedule
+          </button>
         </div>
       )}
       <SubmitModal

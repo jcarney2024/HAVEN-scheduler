@@ -1,0 +1,54 @@
+import type {
+  DirectorIdentity,
+  ScheduleResponse,
+} from "./types";
+
+const BASE = "/api";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    const err = new Error(json.error ?? `HTTP ${res.status}`);
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
+  }
+  return json as T;
+}
+
+export const api = {
+  director: (netid: string, email: string) =>
+    request<DirectorIdentity>(`/director/${encodeURIComponent(netid)}`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  schedule: (deptId: string, callerNetid: string, callerEmail: string) =>
+    request<ScheduleResponse>(`/schedule/${encodeURIComponent(deptId)}`, {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+  assign: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    departmentId: string;
+    date: string;
+    directorIds: string[];
+    volunteerIds: string[];
+  }) =>
+    request<{ success: true }>("/assignment", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  submit: (deptId: string, callerNetid: string, callerEmail: string) =>
+    request<{ success: true }>(`/submit/${encodeURIComponent(deptId)}`, {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+};

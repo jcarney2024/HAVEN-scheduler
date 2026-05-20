@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable";
-import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates";
-import { computeConflicts, type ScheduleEntry } from "./conflicts";
-import { loadConfig, type Config } from "./config";
+import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable.js";
+import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.js";
+import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
+import { loadConfig, type Config } from "./config.js";
 
 type AllPeopleFields = {
   NetID?: string;

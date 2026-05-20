@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { handle } from "hono/vercel";
-import { app } from "../server/app";
+import { app } from "../server/app.js";
 
 export const config = { runtime: "nodejs" };
 

@@ -53,6 +53,14 @@ type ScheduleRowFields = {
 // every department's schedule, not just their own.
 const ADMIN_DEPT_NAMES = ["ITCM", "EXEC"];
 
+// Cross-department delegation: directors of the key dept can manage the
+// listed depts on top of their own. Add entries as the org structure grows.
+const MANAGES_OTHER_DEPTS: Record<string, string[]> = {
+  VADC: ["VADM"],
+  SRHD: ["SCTS", "JCTS", "CCRH"],
+  PCAR: ["SCTP", "JCTP"],
+};
+
 export const app = new Hono();
 app.use("*", cors());
 app.use("*", logger());
@@ -128,6 +136,39 @@ function isAdminPerson(
   });
 }
 
+/**
+ * Set of department record IDs this person is allowed to manage.
+ * - Admins (ITCM/EXEC directors) manage every department.
+ * - Otherwise: depts where they're a director + any cross-managed depts via
+ *   MANAGES_OTHER_DEPTS (e.g., SRHD director also manages SCTS/JCTS/CCRH).
+ */
+function manageableDeptIdsFor(
+  allRoster: AirtableRecord<Su26RosterFields>[],
+  personId: string,
+): Set<string> {
+  if (isAdminPerson(allRoster, personId)) {
+    return new Set(allRoster.map((d) => d.id));
+  }
+
+  const idByName = new Map<string, string>();
+  for (const d of allRoster) {
+    const name = d.fields["Department Name"];
+    if (name) idByName.set(name, d.id);
+  }
+
+  const out = new Set<string>();
+  for (const d of allRoster) {
+    if (!toIdList(d.fields.Directors).includes(personId)) continue;
+    out.add(d.id);
+    const name = d.fields["Department Name"] ?? "";
+    for (const targetName of MANAGES_OTHER_DEPTS[name] ?? []) {
+      const tid = idByName.get(targetName);
+      if (tid) out.add(tid);
+    }
+  }
+  return out;
+}
+
 app.post(`/director/:netid`, async (c) => {
   const config = await getConfig();
   if (!config) return c.json({ error: "Not configured" }, 400);
@@ -143,23 +184,21 @@ app.post(`/director/:netid`, async (c) => {
     tableId: config.su26RosterTableId,
   });
   const isAdmin = isAdminPerson(allRoster, person.id);
-  const visibleDepts = isAdmin
-    ? allRoster
-    : allRoster.filter((d) => toIdList(d.fields.Directors).includes(person.id));
+  const manageable = manageableDeptIdsFor(allRoster, person.id);
+  const visibleDepts = allRoster.filter((d) => manageable.has(d.id));
 
   if (visibleDepts.length === 0) {
     return c.json({ error: "Not a SU 26 director" }, 403);
   }
 
-  // Sort: admin's home departments first, then others alphabetically by name.
-  const sorted = isAdmin
-    ? [...visibleDepts].sort((a, b) => {
-        const aHome = toIdList(a.fields.Directors).includes(person.id) ? 0 : 1;
-        const bHome = toIdList(b.fields.Directors).includes(person.id) ? 0 : 1;
-        if (aHome !== bHome) return aHome - bHome;
-        return (a.fields["Department Name"] ?? "").localeCompare(b.fields["Department Name"] ?? "");
-      })
-    : visibleDepts;
+  // Sort: home departments (where they're listed as a director) first, then
+  // delegated/admin depts, then alphabetical within each group.
+  const sorted = [...visibleDepts].sort((a, b) => {
+    const aHome = toIdList(a.fields.Directors).includes(person.id) ? 0 : 1;
+    const bHome = toIdList(b.fields.Directors).includes(person.id) ? 0 : 1;
+    if (aHome !== bHome) return aHome - bHome;
+    return (a.fields["Department Name"] ?? "").localeCompare(b.fields["Department Name"] ?? "");
+  });
 
   return c.json({
     person: {
@@ -246,8 +285,7 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const dept = allRoster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  const callerIsDeptDirector =
-    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(allRoster, caller.id);
+  const callerIsDeptDirector = manageableDeptIdsFor(allRoster, caller.id).has(deptId);
 
   // dept name lookup for ScheduleEntry construction
   const deptNameById = new Map<string, string>(
@@ -417,9 +455,7 @@ app.post("/assignment", async (c) => {
   const dept = roster.find((r) => r.id === departmentId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
 
-  const isAuthorized =
-    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
-  if (!isAuthorized) {
+  if (!manageableDeptIdsFor(roster, caller.id).has(departmentId)) {
     return c.json({ error: "Caller not authorized for this department" }, 403);
   }
 
@@ -488,9 +524,7 @@ app.post("/submit/:deptId", async (c) => {
   });
   const dept = roster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  const isAuthorized =
-    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
-  if (!isAuthorized) {
+  if (!manageableDeptIdsFor(roster, caller.id).has(deptId)) {
     return c.json({ error: "Not authorized for this department" }, 403);
   }
 
@@ -537,17 +571,16 @@ app.post("/availability", async (c) => {
     tableId: config.su26RosterTableId,
   });
 
-  // Authorization: caller is an admin, OR there's at least one SU 26 dept
-  // where the caller is a director AND the person is a director or volunteer.
-  const callerIsAdmin = isAdminPerson(roster, caller.id);
-  const sharedDept =
-    callerIsAdmin ||
-    roster.some((d) => {
-      const dirs = toIdList(d.fields.Directors);
-      const vols = toIdList(d.fields.Volunteers);
-      return dirs.includes(caller.id) && (dirs.includes(personId) || vols.includes(personId));
-    });
-  if (!sharedDept) {
+  // Authorization: caller can manage a dept that the target person is on
+  // (admins manage every dept; SRHD director manages SCTS/JCTS/CCRH; etc.).
+  const manageable = manageableDeptIdsFor(roster, caller.id);
+  const authorized = roster.some((d) => {
+    if (!manageable.has(d.id)) return false;
+    const dirs = toIdList(d.fields.Directors);
+    const vols = toIdList(d.fields.Volunteers);
+    return dirs.includes(personId) || vols.includes(personId);
+  });
+  if (!authorized) {
     return c.json({ error: "Not authorized to edit this person's availability" }, 403);
   }
 
@@ -596,9 +629,7 @@ app.post("/remove-volunteer", async (c) => {
   const dept = roster.find((r) => r.id === departmentId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
 
-  const isAuthorized =
-    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
-  if (!isAuthorized) {
+  if (!manageableDeptIdsFor(roster, caller.id).has(departmentId)) {
     return c.json({ error: "Not authorized for this department" }, 403);
   }
 

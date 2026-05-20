@@ -3,20 +3,46 @@ import { Toaster } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import type { DirectorIdentity } from "@/api/types";
 import { LOGO_URL, BG_IMAGE } from "./constants";
-import { DirectorLookup } from "./components/DirectorLookup";
+import { LandingCards } from "./components/LandingCards";
 import { ScheduleBuilder } from "./components/ScheduleBuilder";
+import { PublicScheduleView } from "./components/view/PublicScheduleView";
 
-type Step = "loading" | "lookup" | "schedule";
+type Step = "loading" | "lookup" | "schedule" | "view";
+
+function initialStepFromUrl(): Step {
+  if (typeof window === "undefined") return "loading";
+  return window.location.pathname === "/view" ? "view" : "loading";
+}
 
 export default function App() {
-  const [step, setStep] = useState<Step>("loading");
+  const [step, setStep] = useState<Step>(initialStepFromUrl());
   const [identity, setIdentity] = useState<DirectorIdentity | null>(null);
 
   useEffect(() => {
-    // No setup step — backend config is via env vars. Brief delay so the
-    // loading state doesn't pop in/out instantly.
-    const t = setTimeout(() => setStep("lookup"), 200);
-    return () => clearTimeout(t);
+    if (step === "loading") {
+      const t = setTimeout(() => setStep("lookup"), 200);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [step]);
+
+  // Keep URL in sync so /view is shareable + back button works.
+  useEffect(() => {
+    const target = step === "view" ? "/view" : "/";
+    if (window.location.pathname !== target) {
+      window.history.pushState({}, "", target);
+    }
+  }, [step]);
+
+  // Respond to browser back/forward.
+  useEffect(() => {
+    function onPop() {
+      const next: Step = window.location.pathname === "/view" ? "view" : "lookup";
+      setStep(next);
+      if (next === "lookup") setIdentity(null);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   function handleIdentity(found: DirectorIdentity) {
@@ -29,6 +55,14 @@ export default function App() {
     setStep("lookup");
   }
 
+  function handleOpenView() {
+    setStep("view");
+  }
+
+  function handleBackToLanding() {
+    setStep("lookup");
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-hidden font-sans text-slate-900">
       <Toaster position="top-center" richColors />
@@ -38,13 +72,17 @@ export default function App() {
       </div>
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="p-6 flex items-center justify-between text-white border-b border-white/10">
-          <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={handleBackToLanding}
+            className="flex items-center gap-4 text-left"
+          >
             <img src={LOGO_URL} alt="HAVEN Free Clinic" className="h-12 w-auto" />
             <div className="h-8 w-px bg-white/20" />
             <p className="text-sm font-medium text-blue-100 tracking-wide uppercase">
               Clinic Schedule
             </p>
-          </div>
+          </button>
           {identity && (
             <button
               onClick={handleSignOut}
@@ -70,27 +108,19 @@ export default function App() {
               </motion.div>
             )}
             {step === "lookup" && (
-              <motion.div
-                key="lookup"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="w-full max-w-md mt-12"
-              >
-                <DirectorLookup onFound={handleIdentity} />
-              </motion.div>
+              <LandingCards
+                key="landing"
+                onIdentity={handleIdentity}
+                onOpenView={handleOpenView}
+              />
             )}
             {step === "schedule" && identity && (
-              <motion.div
+              <ScheduleBuilder
                 key="schedule"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="w-full max-w-6xl"
-              >
-                <ScheduleBuilder identity={identity} />
-              </motion.div>
+                identity={identity}
+              />
             )}
+            {step === "view" && <PublicScheduleView key="view" />}
           </AnimatePresence>
         </main>
 

@@ -26,10 +26,6 @@ export function RemoveVolunteerModal({
             This drops <strong>{personName}</strong> from the {deptName} volunteer roster
             and unschedules them from every Saturday they were on.
           </p>
-          <p className="text-slate-500">
-            To re-add them later, edit the SU 26 row for {deptName} in Airtable and link
-            them back to the Volunteers field.
-          </p>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button

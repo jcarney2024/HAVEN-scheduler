@@ -139,7 +139,10 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       const idx = person.available.indexOf(date);
       if (idx >= 0) person.available.splice(idx, 1);
       else person.available.push(date);
-      person.availabilityOverridden = true;
+      // The server treats an empty All People field as "no override" and falls
+      // back to applicant-base data. Mirror that here so the badge clears
+      // immediately when the user unchecks the last date.
+      person.availabilityOverridden = person.available.length > 0;
       persistAvailability.schedule(`${personId}|${kind}`, personId, kind, [...person.available]);
       return next;
     });

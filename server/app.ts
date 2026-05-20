@@ -50,6 +50,22 @@ type ScheduleRowFields = {
   "Volunteers on Shift"?: unknown;
 };
 
+type ShiftRequestFields = {
+  Department?: unknown;
+  Requester?: unknown;
+  "Requester Email"?: string;
+  "Requester Date"?: unknown;
+  Target?: unknown;
+  "Target Date"?: unknown;
+  Type?: string;
+  Note?: string;
+  Status?: unknown;
+  Resolver?: unknown;
+  "Resolution Note"?: string;
+  "Submitted At"?: string;
+  "Resolved At"?: string;
+};
+
 // Departments whose directors get master access — they can view + edit
 // every department's schedule, not just their own.
 const ADMIN_DEPT_NAMES = ["ITCM", "EXEC"];
@@ -781,4 +797,93 @@ app.post("/remove-volunteer", async (c) => {
   }
 
   return c.json({ success: true, unscheduledCount: affected.length });
+});
+
+app.post("/me/assignments", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const { callerNetid, callerEmail } = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+  };
+  if (!callerNetid || !callerEmail) {
+    return c.json({ error: "Missing callerNetid / callerEmail" }, 400);
+  }
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const [allDepts, allScheduleRows, pendingRequests] = await Promise.all([
+    listAll<Su26RosterFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26RosterTableId,
+    }),
+    listAll<ScheduleRowFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ScheduleTableId,
+    }),
+    listAll<ShiftRequestFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ShiftRequestsTableId,
+      filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0)`,
+    }),
+  ]);
+
+  const deptIdByName = new Map<string, { id: string; name: string }>();
+  for (const d of allDepts) {
+    const name = d.fields["Department Name"] ?? "";
+    if (name) deptIdByName.set(name, { id: d.id, name });
+  }
+
+  const pendingByKey = new Map<string, string>();
+  for (const r of pendingRequests) {
+    const deptLink = toIdList(r.fields.Department)[0];
+    const dateDisplay = selectName(r.fields["Requester Date"]);
+    const iso = normalizeVolunteerDate(dateDisplay);
+    if (deptLink && iso) pendingByKey.set(`${deptLink}|${iso}`, r.id);
+  }
+
+  const assignments: Array<{
+    deptId: string;
+    deptName: string;
+    date: string;
+    role: "director" | "volunteer";
+    pendingRequestId: string | null;
+  }> = [];
+
+  for (const row of allScheduleRows) {
+    const deptName = selectName(row.fields.Department);
+    const dept = deptIdByName.get(deptName);
+    if (!dept) continue;
+    const iso = normalizeVolunteerDate(selectName(row.fields.Date));
+    if (!iso) continue;
+    const directorIds = toIdList(row.fields["Directors on Shift"]);
+    const volunteerIds = toIdList(row.fields["Volunteers on Shift"]);
+    const role: "director" | "volunteer" | null =
+      directorIds.includes(person.id) ? "director" :
+      volunteerIds.includes(person.id) ? "volunteer" : null;
+    if (!role) continue;
+    assignments.push({
+      deptId: dept.id,
+      deptName: dept.name,
+      date: iso,
+      role,
+      pendingRequestId: pendingByKey.get(`${dept.id}|${iso}`) ?? null,
+    });
+  }
+
+  assignments.sort((a, b) =>
+    a.date === b.date ? a.deptName.localeCompare(b.deptName) : a.date.localeCompare(b.date),
+  );
+
+  return c.json({
+    person: {
+      id: person.id,
+      name: person.fields.Name ?? "",
+      netid: person.fields.NetID ?? "",
+      email: person.fields["Contact Email"] ?? "",
+    },
+    assignments,
+  });
 });

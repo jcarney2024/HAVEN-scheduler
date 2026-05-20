@@ -996,3 +996,40 @@ app.post("/requests", async (c) => {
 
   return c.json({ id: created.id, status: "Pending" }, 201);
 });
+
+app.post("/requests/:id/withdraw", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const id = c.req.param("id");
+  const { callerNetid, callerEmail } = (await c.req.json()) as {
+    callerNetid?: string; callerEmail?: string;
+  };
+  if (!callerNetid || !callerEmail) return c.json({ error: "Missing callerNetid / callerEmail" }, 400);
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const matches = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `RECORD_ID() = '${escapeFormulaString(id)}'`,
+  });
+  const req = matches[0];
+  if (!req) return c.json({ error: "Not found" }, 404);
+
+  if (toIdList(req.fields.Requester)[0] !== person.id)
+    return c.json({ error: "Not your request" }, 403);
+
+  if (selectName(req.fields.Status) !== "Pending")
+    return c.json({ error: "Already resolved" }, 409);
+
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    recordId: id,
+    fields: { Status: "Withdrawn", "Resolved At": new Date().toISOString() },
+  });
+
+  return c.json({ id, status: "Withdrawn" });
+});

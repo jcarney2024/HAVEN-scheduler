@@ -10,9 +10,13 @@ export function DepartmentSwitcher({
   onSelect: (id: string) => void;
 }) {
   if (departments.length === 1) {
+    const only = departments[0];
     return (
       <div className="text-lg font-semibold">
-        {departments[0].name}
+        {only.name}
+        {only.pendingRequestCount > 0 && (
+          <span className="ml-2 text-sm text-amber-600">({only.pendingRequestCount} pending)</span>
+        )}
       </div>
     );
   }
@@ -24,7 +28,7 @@ export function DepartmentSwitcher({
     >
       {departments.map((d) => (
         <option key={d.id} value={d.id}>
-          {d.name}
+          {d.name}{d.pendingRequestCount > 0 ? ` (${d.pendingRequestCount} pending)` : ""}
         </option>
       ))}
     </select>

@@ -10,6 +10,7 @@ import { GridView } from "./schedule/GridView";
 import { SubmittedView } from "./SubmittedView";
 import { SubmitModal } from "./schedule/SubmitModal";
 import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
+import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 import type { Person } from "@/api/types";
 
@@ -18,7 +19,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
-  const [editMode, setEditMode] = useState<"assign" | "availability">("assign");
+  const [editMode, setEditMode] = useState<"assign" | "availability" | "requests">("assign");
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -99,6 +100,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     }
     return set.size;
   }, [data]);
+
+  const pendingCount =
+    identity.departments.find((d) => d.id === selectedDeptId)?.pendingRequestCount ?? 0;
 
   function handleAssignmentToggle(date: string, kind: "director" | "volunteer", personId: string) {
     if (!data) return;
@@ -259,7 +263,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex border border-slate-300 rounded-lg overflow-hidden">
-            {(["assign", "availability"] as const).map((m) => (
+            {(["assign", "availability", "requests"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setEditMode(m)}
@@ -271,15 +275,19 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
                     : "bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                {m === "assign" ? "Assign" : "Edit availability"}
+                {m === "assign"
+                  ? "Assign"
+                  : m === "availability"
+                    ? "Edit availability"
+                    : `Pending Requests${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
               </button>
             ))}
           </div>
-          <ViewToggle mode={mode} onChange={setMode} />
+          {editMode !== "requests" && <ViewToggle mode={mode} onChange={setMode} />}
         </div>
       </div>
 
-      {editMode === "availability" && (
+      {editMode !== "requests" && editMode === "availability" && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
           <strong>Availability edit mode.</strong>{" "}
           Checkboxes now toggle whether each person is <em>available</em> for the
@@ -287,13 +295,21 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         </div>
       )}
 
-      <StatsBar assignments={data.assignments} doubleBookedCount={doubleBookedCount} />
+      {editMode !== "requests" && (
+        <StatsBar assignments={data.assignments} doubleBookedCount={doubleBookedCount} />
+      )}
 
-      {submitted && (
+      {editMode !== "requests" && submitted && (
         <SubmittedView deptName={data.department.name} submittedAt={data.department.submittedAt} />
       )}
 
-      {mode === "saturday" ? (
+      {editMode === "requests" ? (
+        <PendingRequestsTab
+          deptId={selectedDeptId}
+          credentials={{ netid: identity.person.netid, email: identity.person.email }}
+          onChanged={reload}
+        />
+      ) : mode === "saturday" ? (
         <SaturdayView
           dates={data.dates}
           directors={data.roster.directors}
@@ -321,7 +337,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         />
       )}
 
-      {!submitted && data.callerIsDeptDirector && (
+      {editMode !== "requests" && !submitted && data.callerIsDeptDirector && (
         <div className="flex justify-end items-center gap-2 pt-4 border-t border-slate-200">
           <button
             onClick={handleSaveDraft}

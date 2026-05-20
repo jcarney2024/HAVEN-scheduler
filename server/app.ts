@@ -4,6 +4,7 @@ import { logger } from "hono/logger";
 import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable.js";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.js";
 import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
+import { validateRequest } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
 
@@ -886,4 +887,112 @@ app.post("/me/assignments", async (c) => {
     },
     assignments,
   });
+});
+
+app.post("/requests", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    deptId?: string;
+    requesterDate?: string;  // ISO Saturday key
+    targetNetid?: string;
+    targetDate?: string;     // ISO
+    note?: string;
+  };
+  const { callerNetid, callerEmail, deptId, requesterDate, targetNetid, targetDate, note } = body;
+  if (!callerNetid || !callerEmail || !deptId || !requesterDate) {
+    return c.json({ error: "Missing required fields" }, 400);
+  }
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const allDepts = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = allDepts.find((d) => d.id === deptId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+
+  const scheduleRows = await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+    filterByFormula: `{Department} = '${escapeFormulaString(dept.fields["Department Name"] ?? "")}'`,
+  });
+
+  const rowsForValidate = scheduleRows
+    .map((r) => {
+      const iso = normalizeVolunteerDate(selectName(r.fields.Date));
+      if (!iso) return null;
+      return {
+        date: iso,
+        directorIds: toIdList(r.fields["Directors on Shift"]),
+        volunteerIds: toIdList(r.fields["Volunteers on Shift"]),
+      };
+    })
+    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+
+  // Resolve targetNetid (if provided) to a person id. The frontend modal in the next task
+  // may send a name in this field instead of a NetID (because the public viewer redacts
+  // NetIDs), so do BOTH lookups — NetID first, name fallback.
+  let targetPersonId: string | undefined;
+  if (targetNetid) {
+    const byNetid = await listAll<AllPeopleFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.allPeopleTableId,
+      filterByFormula: `{NetID} = '${escapeFormulaString(targetNetid)}'`,
+    });
+    if (byNetid[0]) {
+      targetPersonId = byNetid[0].id;
+    } else {
+      const byName = await listAll<AllPeopleFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.allPeopleTableId,
+        filterByFormula: `{Name} = '${escapeFormulaString(targetNetid)}'`,
+      });
+      targetPersonId = byName[0]?.id;
+    }
+    if (!targetPersonId) return c.json({ error: "Partner is not eligible" }, 409);
+  }
+
+  const v = validateRequest({
+    scheduleRows: rowsForValidate,
+    requesterId: person.id,
+    requesterDate,
+    targetId: targetPersonId,
+    targetDate,
+  });
+  if (!v.ok) return c.json({ error: v.error }, 409);
+
+  // Check for duplicate pending request on (person, requesterDate).
+  const duplicates = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0, {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+  });
+  if (duplicates.length > 0) return c.json({ error: "Pending request already exists" }, 409);
+
+  const fields: Record<string, unknown> = {
+    Department: [dept.id],
+    Requester: [person.id],
+    "Requester Email": callerEmail,
+    "Requester Date": displayDate(requesterDate),
+    Status: "Pending",
+  };
+  if (targetPersonId && targetDate) {
+    fields.Target = [targetPersonId];
+    fields["Target Date"] = displayDate(targetDate);
+  }
+  if (note) fields.Note = note;
+
+  const created = await createRecord<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    fields,
+  });
+
+  return c.json({ id: created.id, status: "Pending" }, 201);
 });

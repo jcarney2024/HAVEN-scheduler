@@ -1,5 +1,4 @@
 const BASE = "https://api.airtable.com/v0";
-const PAT = process.env.AIRTABLE_PAT ?? "";
 
 type AirtableRecord<F = Record<string, unknown>> = {
   id: string;
@@ -13,7 +12,7 @@ type ListResponse<F> = {
 };
 
 const headers = () => ({
-  Authorization: `Bearer ${PAT}`,
+  Authorization: `Bearer ${process.env.AIRTABLE_PAT ?? ""}`,
   "Content-Type": "application/json",
 });
 

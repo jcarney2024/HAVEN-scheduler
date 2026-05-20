@@ -293,6 +293,18 @@ app.post(`/director/:netid`, async (c) => {
     return (a.fields["Department Name"] ?? "").localeCompare(b.fields["Department Name"] ?? "");
   });
 
+  // Load pending requests and count by department
+  const pendingForCounts = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `{Status} = 'Pending'`,
+  });
+  const pendingCountByDept = new Map<string, number>();
+  for (const r of pendingForCounts) {
+    const d = toIdList(r.fields.Department)[0];
+    if (d) pendingCountByDept.set(d, (pendingCountByDept.get(d) ?? 0) + 1);
+  }
+
   return c.json({
     person: {
       id: person.id,
@@ -306,6 +318,7 @@ app.post(`/director/:netid`, async (c) => {
       name: d.fields["Department Name"] ?? "",
       scheduleStatus: selectName(d.fields["Schedule Status"]) || "Draft",
       submittedAt: d.fields["Submitted At"] ?? null,
+      pendingRequestCount: pendingCountByDept.get(d.id) ?? 0,
     })),
   });
 });

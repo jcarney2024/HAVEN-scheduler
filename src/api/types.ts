@@ -3,6 +3,7 @@ export type DepartmentRef = {
   name: string;
   scheduleStatus: "Draft" | "Submitted";
   submittedAt: string | null;
+  pendingRequestCount: number;
 };
 
 export type Person = {

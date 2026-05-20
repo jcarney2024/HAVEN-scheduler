@@ -1,3 +1,5 @@
+import type { AirtableRecord } from "./airtable.js";
+
 export type ScheduleRowForValidation = {
   date: string; // ISO Saturday key
   directorIds: string[];
@@ -150,4 +152,64 @@ export function planApply(input: ApplyInput): PatchOp[] {
   };
 
   return [requesterPatch, targetPatch];
+}
+
+export type PatchRecordFn = (opts: {
+  baseId: string;
+  tableId: string;
+  recordId: string;
+  fields: Record<string, unknown>;
+}) => Promise<AirtableRecord>;
+
+export type ExecuteApplyInput = {
+  baseId: string;
+  scheduleTableId: string;
+  ops: PatchOp[];
+  /** Maps recordId → its row as it was BEFORE this apply. Used for rollback. */
+  originalRows: Map<string, ScheduleRowForApply>;
+  patchRecord: PatchRecordFn;
+};
+
+function rollbackFieldsFor(
+  row: ScheduleRowForApply,
+  changedField: string,
+): Record<string, string[]> {
+  if (changedField === "Directors on Shift") return { "Directors on Shift": row.directorIds };
+  if (changedField === "Volunteers on Shift") return { "Volunteers on Shift": row.volunteerIds };
+  return {};
+}
+
+export async function executeApply(input: ExecuteApplyInput): Promise<void> {
+  const { baseId, scheduleTableId, ops, originalRows, patchRecord } = input;
+
+  const applied: Array<{ recordId: string; field: string }> = [];
+
+  for (const op of ops) {
+    try {
+      const [field] = Object.keys(op.fields);
+      await patchRecord({
+        baseId,
+        tableId: scheduleTableId,
+        recordId: op.recordId,
+        fields: op.fields,
+      });
+      applied.push({ recordId: op.recordId, field });
+    } catch (err) {
+      for (const a of applied.reverse()) {
+        const original = originalRows.get(a.recordId);
+        if (!original) continue;
+        try {
+          await patchRecord({
+            baseId,
+            tableId: scheduleTableId,
+            recordId: a.recordId,
+            fields: rollbackFieldsFor(original, a.field),
+          });
+        } catch (rollbackErr) {
+          console.error("rollback failed for", a.recordId, rollbackErr);
+        }
+      }
+      throw err;
+    }
+  }
 }

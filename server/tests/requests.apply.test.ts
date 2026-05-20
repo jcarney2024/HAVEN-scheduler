@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planApply, type ScheduleRowForApply } from "../requests";
+import { planApply, executeApply, type ScheduleRowForApply } from "../requests";
 
 const baseRows: ScheduleRowForApply[] = [
   { id: "rec530", date: "2026-05-30", directorIds: ["dA"], volunteerIds: ["vA", "vB"] },
@@ -74,5 +74,65 @@ describe("planApply", () => {
         requesterDate: "2026-05-30",
       }),
     ).toThrow(/not assigned/i);
+  });
+});
+
+describe("executeApply", () => {
+  it("calls patchRecord for each op in order", async () => {
+    const calls: Array<{ tableId: string; recordId: string; fields: Record<string, unknown> }> = [];
+    const patchRecord = async (opts: { tableId: string; recordId: string; fields: Record<string, unknown> }) => {
+      calls.push({ tableId: opts.tableId, recordId: opts.recordId, fields: opts.fields });
+      return { id: opts.recordId, createdTime: "", fields: opts.fields } as any;
+    };
+
+    await executeApply({
+      baseId: "appX",
+      scheduleTableId: "tblS",
+      ops: [
+        { recordId: "r1", fields: { "Volunteers on Shift": ["vB"] } },
+        { recordId: "r2", fields: { "Volunteers on Shift": ["vA"] } },
+      ],
+      originalRows: new Map([
+        ["r1", { id: "r1", date: "x", directorIds: [], volunteerIds: ["vA", "vB"] }],
+        ["r2", { id: "r2", date: "y", directorIds: [], volunteerIds: ["vC"] }],
+      ]),
+      patchRecord,
+    });
+
+    expect(calls.map((c) => c.recordId)).toEqual(["r1", "r2"]);
+  });
+
+  it("attempts rollback when a later op fails", async () => {
+    const calls: Array<{ recordId: string; fields: Record<string, unknown> }> = [];
+    let opIndex = 0;
+    const patchRecord = async (opts: { tableId: string; recordId: string; fields: Record<string, unknown> }) => {
+      calls.push({ recordId: opts.recordId, fields: opts.fields });
+      opIndex++;
+      if (opIndex === 2) throw new Error("Airtable boom");
+      return { id: opts.recordId, createdTime: "", fields: opts.fields } as any;
+    };
+
+    await expect(
+      executeApply({
+        baseId: "appX",
+        scheduleTableId: "tblS",
+        ops: [
+          { recordId: "r1", fields: { "Volunteers on Shift": ["vB"] } },
+          { recordId: "r2", fields: { "Volunteers on Shift": ["vA"] } },
+        ],
+        originalRows: new Map([
+          ["r1", { id: "r1", date: "x", directorIds: [], volunteerIds: ["vA", "vB"] }],
+          ["r2", { id: "r2", date: "y", directorIds: [], volunteerIds: ["vC"] }],
+        ]),
+        patchRecord,
+      }),
+    ).rejects.toThrow(/Airtable boom/);
+
+    // 3 calls expected: forward(r1), forward(r2)=FAIL, rollback(r1) restoring original.
+    expect(calls.length).toBe(3);
+    expect(calls[0].recordId).toBe("r1");
+    expect(calls[1].recordId).toBe("r2");
+    expect(calls[2].recordId).toBe("r1");
+    expect(calls[2].fields).toEqual({ "Volunteers on Shift": ["vA", "vB"] });
   });
 });

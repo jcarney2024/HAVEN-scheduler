@@ -38,3 +38,18 @@ export type DirectorIdentity = {
   isAdmin?: boolean;
   departments: DepartmentRef[];
 };
+
+export type PublicDeptListItem = {
+  id: string;
+  name: string;
+};
+
+export type PublicSchedule = {
+  deptName: string;
+  submittedAt: string | null;
+  dates: Array<{
+    date: string; // ISO Saturday key
+    directors: Array<{ name: string }>;
+    volunteers: Array<{ name: string }>;
+  }>;
+};

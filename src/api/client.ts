@@ -1,6 +1,8 @@
 import type {
   DirectorIdentity,
   ScheduleResponse,
+  PublicDeptListItem,
+  PublicSchedule,
 } from "./types";
 
 const BASE = "/api";
@@ -73,4 +75,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
+  viewSchedule: (deptId: string) =>
+    request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),
 };

@@ -4,6 +4,7 @@ import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.ts";
 import { escapeFormulaString, listAll } from "./airtable.ts";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.ts";
+import { computeConflicts, type ScheduleEntry } from "./conflicts.ts";
 
 type Config = {
   haveNManagementBaseId: string;
@@ -251,18 +252,35 @@ app.post(`${ROUTE_PREFIX}/schedule/:deptId`, async (c) => {
     : [];
   const peopleById = new Map(people.map((p) => [p.id, p]));
 
+  const scheduleEntries: ScheduleEntry[] = allSchedule
+    .map((row): ScheduleEntry | null => {
+      const deptRef = (row.fields.Department as { id: string; name?: string }[] | undefined)?.[0];
+      const dateName = selectName(row.fields.Date);
+      const iso = normalizeVolunteerDate(dateName);
+      if (!deptRef || !iso) return null;
+      const dirs = (row.fields["Directors on Shift"] as { id: string }[] | undefined) ?? [];
+      const vols = (row.fields["Volunteers on Shift"] as { id: string }[] | undefined) ?? [];
+      return {
+        date: iso,
+        departmentId: deptRef.id,
+        departmentName: deptRef.name ?? "",
+        directorIds: dirs.map((r) => r.id),
+        volunteerIds: vols.map((r) => r.id),
+      };
+    })
+    .filter((x): x is ScheduleEntry => !!x);
+
   function buildPerson(id: string, kind: "director" | "volunteer") {
     const person = peopleById.get(id);
     const netid = (person?.fields.NetID ?? "").toLowerCase();
     const available =
       kind === "director" ? directorAvail.get(netid) ?? [] : volAvail.get(netid) ?? [];
-    return {
-      id,
-      netid,
-      name: person?.fields.Name ?? "",
-      available,
-      conflicts: { sameDay: [], crossTerm: [] }, // populated by Task 11
-    };
+    const conflicts = computeConflicts({
+      personId: id,
+      thisDepartmentId: deptId,
+      allSchedule: scheduleEntries,
+    });
+    return { id, netid, name: person?.fields.Name ?? "", available, conflicts };
   }
 
   const scheduleStatus = selectName(dept.fields["Schedule Status"]) || "Draft";

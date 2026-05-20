@@ -17,6 +17,8 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
   const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
 
@@ -54,6 +56,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         directorIds: assignment.directorIds,
         volunteerIds: assignment.volunteerIds,
       });
+      setLastSavedAt(new Date());
     } catch (e) {
       toast.error((e as Error).message || "Save failed");
       reload(); // revert by reloading server truth
@@ -82,7 +85,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       const idx = list.indexOf(personId);
       if (idx >= 0) list.splice(idx, 1);
       else list.push(personId);
-      persist(`${date}`, { ...a }, next.department.id);
+      persist.schedule(`${date}`, { ...a }, next.department.id);
 
       // same-day conflict warning
       const person = [...next.roster.directors, ...next.roster.volunteers].find((p) => p.id === personId);
@@ -127,6 +130,23 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     }
   }
 
+  async function handleSaveDraft() {
+    setSavingDraft(true);
+    try {
+      await persist.flush();
+      toast.success("Draft saved — you can come back any time.");
+    } catch (e) {
+      toast.error((e as Error).message || "Couldn't save draft.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  function formatSavedAt(d: Date | null): string {
+    if (!d) return "";
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
   return (
     <div className="bg-white rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -152,7 +172,17 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           >
             {data.department.scheduleStatus}
           </span>
-          {saving && <span className="text-xs text-slate-500">Saving…</span>}
+          {saving ? (
+            <span className="text-xs text-slate-500 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+              Saving…
+            </span>
+          ) : lastSavedAt ? (
+            <span className="text-xs text-emerald-700 flex items-center gap-1" title="Your edits are saved as a draft.">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Saved {formatSavedAt(lastSavedAt)}
+            </span>
+          ) : null}
         </div>
         <ViewToggle mode={mode} onChange={setMode} />
       </div>
@@ -184,13 +214,25 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       )}
 
       {!submitted && data.callerIsDeptDirector && (
-        <div className="flex justify-end pt-4 border-t border-slate-200">
-          <button
-            onClick={() => setSubmitOpen(true)}
-            className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
-          >
-            Submit term schedule
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
+          <p className="text-xs text-slate-500 max-w-md">
+            Changes save automatically. You can close this tab and come back later — your draft is safe.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSaveDraft}
+              disabled={savingDraft || saving}
+              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md font-medium hover:bg-slate-50 disabled:opacity-50"
+            >
+              {savingDraft ? "Saving…" : "Save draft"}
+            </button>
+            <button
+              onClick={() => setSubmitOpen(true)}
+              className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
+            >
+              Submit term schedule
+            </button>
+          </div>
         </div>
       )}
       <SubmitModal

@@ -37,7 +37,7 @@ export function DirectorLookup({ onFound }: { onFound: (id: DirectorIdentity) =>
   return (
     <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg border border-slate-100">
       <h2 className="text-2xl font-bold">Sign in</h2>
-      <p className="text-slate-500 mt-2">NetID + email — same as on your HAVEN record.</p>
+      <p className="text-slate-500 mt-2">Sign in with your HAVEN-affiliated NetID and email.</p>
 
       <form onSubmit={submit} className="space-y-4 mt-6">
         <div>

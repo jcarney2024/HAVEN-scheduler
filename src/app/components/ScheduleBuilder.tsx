@@ -279,9 +279,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
           <strong>Availability edit mode.</strong>{" "}
           Checkboxes now toggle whether each person is <em>available</em> for the
-          selected Saturday. Overrides save to All People → "SU 26 — Available as
-          Director/Volunteer". Clear the field in Airtable to reset to the original
-          application data.
+          selected Saturday.
         </div>
       )}
 

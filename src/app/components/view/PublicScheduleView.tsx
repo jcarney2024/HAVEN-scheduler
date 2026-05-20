@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import type { PublicDeptListItem, PublicSchedule } from "@/api/types";
+import type { MyAssignmentsResponse, PublicDeptListItem, PublicSchedule } from "@/api/types";
 import { SaturdayView } from "../schedule/SaturdayView";
 import { displayDate } from "./displayDate";
+import { SignInToRequest } from "./SignInToRequest";
+import { MyAssignments } from "./MyAssignments";
 
 export function PublicScheduleView() {
   const [depts, setDepts] = useState<PublicDeptListItem[] | null>(null);
@@ -12,6 +14,10 @@ export function PublicScheduleView() {
   const [schedule, setSchedule] = useState<PublicSchedule | null>(null);
   const [loading, setLoading] = useState(false);
   const [notPublished, setNotPublished] = useState(false);
+  const [signedIn, setSignedIn] = useState<{
+    data: MyAssignmentsResponse;
+    credentials: { netid: string; email: string };
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +69,14 @@ export function PublicScheduleView() {
       cancelled = true;
     };
   }, [deptId]);
+
+  function refetchAssignments() {
+    if (!signedIn) return;
+    api
+      .myAssignments(signedIn.credentials.netid, signedIn.credentials.email)
+      .then((data) => setSignedIn({ ...signedIn, data }))
+      .catch((err) => toast.error((err as Error).message ?? "Failed to refresh"));
+  }
 
   return (
     <motion.div
@@ -130,6 +144,18 @@ export function PublicScheduleView() {
             readOnly
           />
         </div>
+      )}
+
+      {signedIn ? (
+        <MyAssignments
+          data={signedIn.data}
+          credentials={signedIn.credentials}
+          onChanged={refetchAssignments}
+        />
+      ) : (
+        <SignInToRequest
+          onSignedIn={(data, credentials) => setSignedIn({ data, credentials })}
+        />
       )}
     </motion.div>
   );

@@ -20,11 +20,12 @@ export function computeConflicts(opts: {
   const isPresent = (e: ScheduleEntry) =>
     e.directorIds.includes(personId) || e.volunteerIds.includes(personId);
 
-  // Count total entries (across all departments) the person appears on per date.
-  const countByDate = new Map<string, number>();
+  // Dates on which the person is assigned in the caller's department.
+  const thisDeptDates = new Set<string>();
   for (const entry of allSchedule) {
+    if (entry.departmentId !== thisDepartmentId) continue;
     if (!isPresent(entry)) continue;
-    countByDate.set(entry.date, (countByDate.get(entry.date) ?? 0) + 1);
+    thisDeptDates.add(entry.date);
   }
 
   const sameDay = new Map<string, Set<string>>(); // date → set of other dept names
@@ -32,7 +33,7 @@ export function computeConflicts(opts: {
   for (const entry of allSchedule) {
     if (entry.departmentId === thisDepartmentId) continue;
     if (!isPresent(entry)) continue;
-    const target = (countByDate.get(entry.date) ?? 0) >= 2 ? sameDay : crossTerm;
+    const target = thisDeptDates.has(entry.date) ? sameDay : crossTerm;
     if (!target.has(entry.date)) target.set(entry.date, new Set());
     target.get(entry.date)!.add(entry.departmentName);
   }

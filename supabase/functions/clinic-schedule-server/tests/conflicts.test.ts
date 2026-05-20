@@ -63,6 +63,7 @@ describe("computeConflicts", () => {
       personId: "p1",
       thisDepartmentId: "LABR",
       allSchedule: [
+        entry("2026-05-30", "LABR", ["p1"], []),
         entry("2026-05-30", "JCTS", ["p1"], []),
         entry("2026-05-30", "JCTS", [], ["p1"]),
       ],

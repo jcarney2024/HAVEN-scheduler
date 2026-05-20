@@ -613,8 +613,10 @@ app.post("/remove-volunteer", async (c) => {
     callerEmail?: string;
     departmentId?: string;
     personId?: string;
+    reason?: string;
   };
   const { callerNetid, callerEmail, departmentId, personId } = body;
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (!callerNetid || !callerEmail || !departmentId || !personId) {
     return c.json({ error: "Missing required field" }, 400);
   }
@@ -671,6 +673,36 @@ app.post("/remove-volunteer", async (c) => {
       }),
     ),
   );
+
+  // 3. Audit log — don't fail the user request if this errors, but make it
+  // loud server-side so we notice. The destructive change already happened.
+  try {
+    const volunteerLookup = await listAll<AllPeopleFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.allPeopleTableId,
+      filterByFormula: `RECORD_ID() = '${escapeFormulaString(personId)}'`,
+      fields: ["Name"],
+      pageSize: 1,
+    });
+    const volunteerName = volunteerLookup[0]?.fields.Name ?? "Unknown volunteer";
+    const deptName = dept.fields["Department Name"] ?? "Unknown department";
+    const callerName = caller.fields.Name ?? callerNetid;
+    await createRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26RemovalLogTableId,
+      fields: {
+        Summary: `${volunteerName} removed from ${deptName} by ${callerName}`,
+        "Removed By": [caller.id],
+        "Volunteer Removed": [personId],
+        Department: [departmentId],
+        "Removed At": new Date().toISOString(),
+        "Unscheduled Count": affected.length,
+        ...(reason ? { Reason: reason } : {}),
+      },
+    });
+  } catch (err) {
+    console.error("[remove-volunteer] failed to write audit log:", err);
+  }
 
   return c.json({ success: true, unscheduledCount: affected.length });
 });

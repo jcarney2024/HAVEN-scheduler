@@ -190,7 +190,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     }
   }
 
-  async function handleConfirmRemove() {
+  async function handleConfirmRemove(reason: string) {
     if (!data || !removeTarget) return;
     setRemoveLoading(true);
     try {
@@ -199,6 +199,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         callerEmail: identity.person.email,
         departmentId: data.department.id,
         personId: removeTarget.id,
+        ...(reason ? { reason } : {}),
       });
       const note =
         res.unscheduledCount > 0

@@ -67,6 +67,7 @@ export const api = {
     callerEmail: string;
     departmentId: string;
     personId: string;
+    reason?: string;
   }) =>
     request<{ success: true; unscheduledCount: number }>("/remove-volunteer", {
       method: "POST",

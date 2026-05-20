@@ -338,3 +338,46 @@ app.post("/assignment", async (c) => {
 
   return c.json({ success: true });
 });
+
+app.post("/submit/:deptId", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const deptId = c.req.param("deptId");
+  const { callerNetid, callerEmail } = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+  };
+  if (!deptId || !callerNetid || !callerEmail) {
+    return c.json({ error: "Missing field" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = roster.find((r) => r.id === deptId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+  const isDir = (dept.fields.Directors as { id: string }[] | undefined)?.some(
+    (d) => d.id === caller.id,
+  );
+  if (!isDir) return c.json({ error: "Not a director on this department" }, 403);
+
+  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
+  if (statusName === "Submitted") return c.json({ error: "Already submitted" }, 409);
+
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+    recordId: dept.id,
+    fields: {
+      "Schedule Status": "Submitted",
+      "Submitted At": new Date().toISOString(),
+      "Submitted By": [caller.id],
+    },
+  });
+
+  return c.json({ success: true });
+});

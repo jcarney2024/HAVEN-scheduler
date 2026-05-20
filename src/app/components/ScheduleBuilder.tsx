@@ -6,6 +6,7 @@ import { DepartmentSwitcher } from "./schedule/DepartmentSwitcher";
 import { StatsBar } from "./schedule/StatsBar";
 import { ViewToggle, type ViewMode } from "./schedule/ViewToggle";
 import { SaturdayView } from "./schedule/SaturdayView";
+import { GridView } from "./schedule/GridView";
 import { SubmittedView } from "./SubmittedView";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 
@@ -139,9 +140,14 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           onToggle={handleToggle}
         />
       ) : (
-        <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-400">
-          Grid view goes here (next task)
-        </div>
+        <GridView
+          dates={data.dates}
+          directors={data.roster.directors}
+          volunteers={data.roster.volunteers}
+          assignments={data.assignments}
+          disabled={submitted || !data.callerIsDeptDirector}
+          onToggle={handleToggle}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Person, Assignment } from "@/api/types";
 import { PersonRow } from "./PersonRow";
+import { DateTabStrip } from "./DateTabStrip";
 
 type Kind = "director" | "volunteer";
 
@@ -113,26 +114,15 @@ export function SaturdayView({
     );
   }
 
+  const tabs = dates.map((d) => ({
+    iso: d.iso,
+    display: d.display,
+    hasDot: editMode === "assign" && tabHasAssignments(d.iso),
+  }));
+
   return (
     <div className="space-y-6">
-      <div className="flex gap-1 overflow-x-auto pb-2">
-        {dates.map((d) => (
-          <button
-            key={d.iso}
-            onClick={() => setActiveIso(d.iso)}
-            className={`flex-shrink-0 px-3 py-1.5 text-sm rounded-full border transition-colors ${
-              activeIso === d.iso
-                ? "bg-[#0F4D92] text-white border-[#0F4D92]"
-                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            {d.display}
-            {editMode === "assign" && tabHasAssignments(d.iso) && (
-              <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            )}
-          </button>
-        ))}
-      </div>
+      <DateTabStrip tabs={tabs} activeIso={activeIso} onSelect={setActiveIso} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {column("Directors", directors, "director", active.directorIds)}

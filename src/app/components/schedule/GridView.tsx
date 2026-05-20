@@ -10,6 +10,13 @@ type Props = {
   onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
 };
 
+function splitDisplay(display: string): { month: string; day: string } {
+  // "May 30th" → { month: "May", day: "30" }
+  const m = display.match(/^([A-Za-z]+)\s+(\d+)/);
+  if (!m) return { month: display, day: "" };
+  return { month: m[1].slice(0, 3), day: m[2] };
+}
+
 export function GridView({ dates, directors, volunteers, assignments, disabled, onToggle }: Props) {
   const byDate = useMemo(
     () => Object.fromEntries(assignments.map((a) => [a.date, a])),
@@ -33,10 +40,9 @@ export function GridView({ dates, directors, volunteers, assignments, disabled, 
 
     return (
       <button
-        key={`${person.id}-${iso}`}
         disabled={disabled}
         onClick={() => onToggle(iso, kind, person.id)}
-        className={`w-8 h-8 flex items-center justify-center text-sm rounded hover:bg-slate-100 disabled:cursor-not-allowed ${color}`}
+        className={`w-9 h-9 flex items-center justify-center text-sm rounded hover:bg-slate-100 disabled:cursor-not-allowed ${color}`}
         title={
           sameDayConflict
             ? "Same-day conflict in another dept"
@@ -54,12 +60,16 @@ export function GridView({ dates, directors, volunteers, assignments, disabled, 
 
   function row(person: Person, kind: "director" | "volunteer") {
     return (
-      <tr key={person.id}>
-        <th scope="row" className="text-left sticky left-0 bg-white pr-3 py-1 text-sm font-normal">
+      <tr key={person.id} className="border-b border-slate-100 last:border-b-0">
+        <th
+          scope="row"
+          className="text-left sticky left-0 bg-white pr-4 py-1 text-sm font-normal whitespace-nowrap min-w-[160px] max-w-[200px] truncate"
+          title={person.name || person.netid}
+        >
           {person.name || person.netid}
         </th>
         {dates.map((d) => (
-          <td key={d.iso} className="text-center">
+          <td key={d.iso} className="text-center px-0.5">
             {cell(person, kind, d.iso)}
           </td>
         ))}
@@ -67,34 +77,62 @@ export function GridView({ dates, directors, volunteers, assignments, disabled, 
     );
   }
 
+  function sectionRow(label: string) {
+    return (
+      <tr>
+        <td
+          className="text-xs font-semibold text-slate-500 uppercase tracking-wider pt-4 pb-1 sticky left-0 bg-white"
+          colSpan={dates.length + 1}
+        >
+          {label}
+        </td>
+      </tr>
+    );
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="text-xs border-collapse">
+    <div className="overflow-x-auto -mx-2 px-2">
+      <table className="border-collapse">
         <thead>
-          <tr>
-            <th className="text-left sticky left-0 bg-white pr-3 pb-2"></th>
-            {dates.map((d) => (
-              <th key={d.iso} className="px-1 pb-2 font-medium text-slate-500">
-                <div className="rotate-[-60deg] origin-bottom-left w-8 whitespace-nowrap">
-                  {d.display}
-                </div>
-              </th>
-            ))}
+          <tr className="border-b border-slate-200">
+            <th className="sticky left-0 bg-white min-w-[160px]"></th>
+            {dates.map((d) => {
+              const { month, day } = splitDisplay(d.display);
+              return (
+                <th
+                  key={d.iso}
+                  className="px-0.5 pb-2 font-medium text-slate-500 text-center align-bottom"
+                >
+                  <div className="flex flex-col items-center leading-tight">
+                    <span className="text-[10px] uppercase tracking-wide">{month}</span>
+                    <span className="text-sm font-semibold text-slate-700">{day}</span>
+                  </div>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td className="text-xs font-semibold text-slate-500 pt-2 pb-1" colSpan={dates.length + 1}>
-              Directors
-            </td>
-          </tr>
-          {directors.map((p) => row(p, "director"))}
-          <tr>
-            <td className="text-xs font-semibold text-slate-500 pt-3 pb-1" colSpan={dates.length + 1}>
-              Volunteers
-            </td>
-          </tr>
-          {volunteers.map((p) => row(p, "volunteer"))}
+          {sectionRow("Directors")}
+          {directors.length === 0 ? (
+            <tr>
+              <td colSpan={dates.length + 1} className="text-sm text-slate-400 italic py-2 sticky left-0 bg-white">
+                No directors on this department's roster.
+              </td>
+            </tr>
+          ) : (
+            directors.map((p) => row(p, "director"))
+          )}
+          {sectionRow("Volunteers")}
+          {volunteers.length === 0 ? (
+            <tr>
+              <td colSpan={dates.length + 1} className="text-sm text-slate-400 italic py-2 sticky left-0 bg-white">
+                No volunteers on this department's roster.
+              </td>
+            </tr>
+          ) : (
+            volunteers.map((p) => row(p, "volunteer"))
+          )}
         </tbody>
       </table>
       <p className="text-xs text-slate-400 mt-3">

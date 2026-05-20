@@ -16,6 +16,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
+  const [editMode, setEditMode] = useState<"assign" | "availability">("assign");
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -65,6 +66,27 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     }
   });
 
+  const persistAvailability = useDebouncedSaver(
+    async (personId: string, kind: "director" | "volunteer", availableDates: string[]) => {
+      setSaving(true);
+      try {
+        await api.setAvailability({
+          callerNetid: identity.person.netid,
+          callerEmail: identity.person.email,
+          personId,
+          kind,
+          availableDates,
+        });
+        setLastSavedAt(new Date());
+      } catch (e) {
+        toast.error((e as Error).message || "Couldn't save availability");
+        reload();
+      } finally {
+        setSaving(false);
+      }
+    },
+  );
+
   const doubleBookedCount = useMemo(() => {
     if (!data) return 0;
     const set = new Set<string>();
@@ -74,7 +96,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     return set.size;
   }, [data]);
 
-  function handleToggle(date: string, kind: "director" | "volunteer", personId: string) {
+  function handleAssignmentToggle(date: string, kind: "director" | "volunteer", personId: string) {
     if (!data) return;
     setData((prev) => {
       if (!prev) return prev;
@@ -101,6 +123,25 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       return next;
     });
   }
+
+  function handleAvailabilityToggle(date: string, kind: "director" | "volunteer", personId: string) {
+    if (!data) return;
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const list = kind === "director" ? next.roster.directors : next.roster.volunteers;
+      const person = list.find((p) => p.id === personId);
+      if (!person) return prev;
+      const idx = person.available.indexOf(date);
+      if (idx >= 0) person.available.splice(idx, 1);
+      else person.available.push(date);
+      person.availabilityOverridden = true;
+      persistAvailability.schedule(`${personId}|${kind}`, personId, kind, [...person.available]);
+      return next;
+    });
+  }
+
+  const handleToggle = editMode === "assign" ? handleAssignmentToggle : handleAvailabilityToggle;
 
   if (loading || !data) {
     return <div className="bg-white rounded-xl p-8 shadow-lg text-slate-500">Loading…</div>;
@@ -184,8 +225,37 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
             </span>
           ) : null}
         </div>
-        <ViewToggle mode={mode} onChange={setMode} />
+        <div className="flex items-center gap-2">
+          <div className="inline-flex border border-slate-300 rounded-lg overflow-hidden">
+            {(["assign", "availability"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setEditMode(m)}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                  editMode === m
+                    ? m === "availability"
+                      ? "bg-amber-500 text-white"
+                      : "bg-[#0F4D92] text-white"
+                    : "bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {m === "assign" ? "Assign" : "Edit availability"}
+              </button>
+            ))}
+          </div>
+          <ViewToggle mode={mode} onChange={setMode} />
+        </div>
       </div>
+
+      {editMode === "availability" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+          <strong>Availability edit mode.</strong>{" "}
+          Checkboxes now toggle whether each person is <em>available</em> for the
+          selected Saturday. Overrides save to All People → "SU 26 — Available as
+          Director/Volunteer". Clear the field in Airtable to reset to the original
+          application data.
+        </div>
+      )}
 
       <StatsBar assignments={data.assignments} doubleBookedCount={doubleBookedCount} />
 
@@ -200,6 +270,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           volunteers={data.roster.volunteers}
           assignments={data.assignments}
           disabled={submitted || !data.callerIsDeptDirector}
+          editMode={editMode}
           onToggle={handleToggle}
         />
       ) : (
@@ -209,6 +280,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           volunteers={data.roster.volunteers}
           assignments={data.assignments}
           disabled={submitted || !data.callerIsDeptDirector}
+          editMode={editMode}
           onToggle={handleToggle}
         />
       )}

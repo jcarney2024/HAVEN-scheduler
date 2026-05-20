@@ -10,6 +10,10 @@ type AllPeopleFields = {
   NetID?: string;
   "Contact Email"?: string;
   Name?: string;
+  // Director-controlled overrides; comma-separated display dates ("May 30th, June 6th, ...").
+  // If non-empty, these REPLACE the applicant-base availability for this person+kind.
+  "SU 26 — Available as Director"?: string;
+  "SU 26 — Available as Volunteer"?: string;
 };
 
 type Su26RosterFields = {
@@ -73,6 +77,21 @@ function toNameList(value: unknown): string[] {
   return value
     .map((v) => (typeof v === "string" ? v : (v as { name?: string }).name ?? ""))
     .filter((s): s is string => !!s);
+}
+
+/**
+ * Parse the "SU 26 — Available as Director/Volunteer" text field.
+ * - Empty/whitespace → null (caller should fall back to base availability)
+ * - Non-empty → array of ISO date strings (possibly empty if no valid dates parsed)
+ */
+function parseAvailabilityOverride(value: string | undefined): string[] | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .split(/[,;\n]/)
+    .map((s) => normalizeVolunteerDate(s.trim()))
+    .filter((x): x is string => !!x);
 }
 
 // singleSelect in REST returns a string; MCP returns {id, name, color}.
@@ -314,14 +333,27 @@ app.post(`/schedule/:deptId`, async (c) => {
   function buildPerson(id: string, kind: "director" | "volunteer") {
     const person = peopleById.get(id);
     const netid = (person?.fields.NetID ?? "").toLowerCase();
-    const available =
+    const overrideField =
+      kind === "director"
+        ? person?.fields["SU 26 — Available as Director"]
+        : person?.fields["SU 26 — Available as Volunteer"];
+    const overrideDates = parseAvailabilityOverride(overrideField);
+    const baseDates =
       kind === "director" ? directorAvail.get(netid) ?? [] : volAvail.get(netid) ?? [];
+    const available = overrideDates ?? baseDates;
     const conflicts = computeConflicts({
       personId: id,
       thisDepartmentId: deptId,
       allSchedule: scheduleEntries,
     });
-    return { id, netid, name: person?.fields.Name ?? "", available, conflicts };
+    return {
+      id,
+      netid,
+      name: person?.fields.Name ?? "",
+      available,
+      availabilityOverridden: overrideDates !== null,
+      conflicts,
+    };
   }
 
   const scheduleStatus = selectName(dept.fields["Schedule Status"]) || "Draft";
@@ -474,6 +506,67 @@ app.post("/submit/:deptId", async (c) => {
       "Submitted At": new Date().toISOString(),
       "Submitted By": [caller.id],
     },
+  });
+
+  return c.json({ success: true });
+});
+
+app.post("/availability", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    personId?: string;
+    kind?: "director" | "volunteer";
+    availableDates?: string[]; // ISO dates
+  };
+  const { callerNetid, callerEmail, personId, kind, availableDates } = body;
+  if (!callerNetid || !callerEmail || !personId || !kind || !Array.isArray(availableDates)) {
+    return c.json({ error: "Missing required field" }, 400);
+  }
+  if (kind !== "director" && kind !== "volunteer") {
+    return c.json({ error: "kind must be 'director' or 'volunteer'" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+
+  // Authorization: caller is an admin, OR there's at least one SU 26 dept
+  // where the caller is a director AND the person is a director or volunteer.
+  const callerIsAdmin = isAdminPerson(roster, caller.id);
+  const sharedDept =
+    callerIsAdmin ||
+    roster.some((d) => {
+      const dirs = toIdList(d.fields.Directors);
+      const vols = toIdList(d.fields.Volunteers);
+      return dirs.includes(caller.id) && (dirs.includes(personId) || vols.includes(personId));
+    });
+  if (!sharedDept) {
+    return c.json({ error: "Not authorized to edit this person's availability" }, 403);
+  }
+
+  // Serialize as comma-separated display dates. Empty input becomes empty
+  // string, which means "fall back to applicant-base availability". Clearing
+  // an override is therefore a side-effect of submitting an empty list.
+  const display = availableDates
+    .map((iso) => normalizeVolunteerDate(iso) ?? iso) // tolerate display-formatted input too
+    .map((iso) => displayDate(iso))
+    .join(", ");
+
+  const fieldName =
+    kind === "director" ? "SU 26 — Available as Director" : "SU 26 — Available as Volunteer";
+
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+    recordId: personId,
+    fields: { [fieldName]: display },
   });
 
   return c.json({ success: true });

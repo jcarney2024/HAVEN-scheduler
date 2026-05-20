@@ -7,6 +7,7 @@ type Props = {
   volunteers: Person[];
   assignments: Assignment[];
   disabled: boolean;
+  editMode: "assign" | "availability";
   onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
 };
 
@@ -17,17 +18,41 @@ function splitDisplay(display: string): { month: string; day: string } {
   return { month: m[1].slice(0, 3), day: m[2] };
 }
 
-export function GridView({ dates, directors, volunteers, assignments, disabled, onToggle }: Props) {
+export function GridView({
+  dates,
+  directors,
+  volunteers,
+  assignments,
+  disabled,
+  editMode,
+  onToggle,
+}: Props) {
   const byDate = useMemo(
     () => Object.fromEntries(assignments.map((a) => [a.date, a])),
     [assignments],
   );
 
   function cell(person: Person, kind: "director" | "volunteer", iso: string) {
+    const available = person.available.includes(iso);
+
+    if (editMode === "availability") {
+      const sym = available ? "●" : "○";
+      const color = available ? "text-amber-600" : "text-slate-300";
+      return (
+        <button
+          disabled={disabled}
+          onClick={() => onToggle(iso, kind, person.id)}
+          className={`w-9 h-9 flex items-center justify-center text-sm rounded hover:bg-amber-50 disabled:cursor-not-allowed ${color}`}
+          title={available ? "Available — click to mark unavailable" : "Not available — click to mark available"}
+        >
+          {sym}
+        </button>
+      );
+    }
+
     const a = byDate[iso];
     const assignedIds = kind === "director" ? a?.directorIds ?? [] : a?.volunteerIds ?? [];
     const assigned = assignedIds.includes(person.id);
-    const available = person.available.includes(iso);
     const sameDayConflict = person.conflicts.sameDay.some((c) => c.date === iso);
     const sym = assigned ? "●" : available ? "○" : "—";
     const color = sameDayConflict
@@ -136,7 +161,19 @@ export function GridView({ dates, directors, volunteers, assignments, disabled, 
         </tbody>
       </table>
       <p className="text-xs text-slate-400 mt-3">
-        ● assigned &nbsp; ○ available &nbsp; — not available &nbsp; <span className="text-red-600">●/○ in red</span> = same-day conflict in another dept
+        {editMode === "availability" ? (
+          <>
+            <span className="text-amber-600">●</span> available &nbsp; ○ not
+            available &nbsp; — click any cell to toggle the person's availability
+            for that Saturday.
+          </>
+        ) : (
+          <>
+            ● assigned &nbsp; ○ available &nbsp; — not available &nbsp;{" "}
+            <span className="text-red-600">●/○ in red</span> = same-day conflict
+            in another dept
+          </>
+        )}
       </p>
     </div>
   );

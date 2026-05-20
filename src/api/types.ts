@@ -10,6 +10,8 @@ export type Person = {
   netid: string;
   name: string;
   available: string[]; // ISO dates
+  /** True if the availability comes from a director-set override on All People, not the apps base. */
+  availabilityOverridden?: boolean;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];

@@ -51,4 +51,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ callerNetid, callerEmail }),
     }),
+  setAvailability: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    personId: string;
+    kind: "director" | "volunteer";
+    availableDates: string[];
+  }) =>
+    request<{ success: true }>("/availability", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

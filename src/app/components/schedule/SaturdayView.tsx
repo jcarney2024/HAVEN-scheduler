@@ -2,12 +2,15 @@ import { useMemo, useState } from "react";
 import type { Person, Assignment } from "@/api/types";
 import { PersonRow } from "./PersonRow";
 
+type Kind = "director" | "volunteer";
+
 export function SaturdayView({
   dates,
   directors,
   volunteers,
   assignments,
   disabled,
+  editMode,
   onToggle,
 }: {
   dates: { iso: string; display: string }[];
@@ -15,7 +18,8 @@ export function SaturdayView({
   volunteers: Person[];
   assignments: Assignment[];
   disabled: boolean;
-  onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
+  editMode: "assign" | "availability";
+  onToggle: (date: string, kind: Kind, personId: string) => void;
 }) {
   const [activeIso, setActiveIso] = useState(dates[0]?.iso ?? "");
   const assignmentByIso = useMemo(
@@ -29,12 +33,32 @@ export function SaturdayView({
     return !!a && (a.directorIds.length + a.volunteerIds.length > 0);
   }
 
-  function column(
-    title: string,
-    people: Person[],
-    kind: "director" | "volunteer",
-    assignedIds: string[],
-  ) {
+  function column(title: string, people: Person[], kind: Kind, assignedIds: string[]) {
+    if (editMode === "availability") {
+      // Show everyone, checkbox = availability for active date.
+      return (
+        <div>
+          <h3 className="font-semibold text-slate-700 mb-2">
+            {title} ({people.filter((p) => p.available.includes(activeIso)).length} of {people.length} available)
+          </h3>
+          <div className="space-y-1">
+            {people.map((p) => (
+              <PersonRow
+                key={p.id}
+                person={p}
+                isAvailable={p.available.includes(activeIso)}
+                isAssigned={p.available.includes(activeIso)}
+                disabled={disabled}
+                editMode="availability"
+                onToggle={() => onToggle(activeIso, kind, p.id)}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // assign mode (existing behavior)
     const available = people.filter((p) => p.available.includes(activeIso));
     const unavailable = people.filter((p) => !p.available.includes(activeIso));
 
@@ -51,6 +75,7 @@ export function SaturdayView({
               isAvailable
               isAssigned={assignedIds.includes(p.id)}
               disabled={disabled}
+              editMode="assign"
               onToggle={() => onToggle(activeIso, kind, p.id)}
             />
           ))}
@@ -68,6 +93,7 @@ export function SaturdayView({
                   isAvailable={false}
                   isAssigned={assignedIds.includes(p.id)}
                   disabled={disabled}
+                  editMode="assign"
                   onToggle={() => onToggle(activeIso, kind, p.id)}
                 />
               ))}
@@ -92,7 +118,7 @@ export function SaturdayView({
             }`}
           >
             {d.display}
-            {tabHasAssignments(d.iso) && (
+            {editMode === "assign" && tabHasAssignments(d.iso) && (
               <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
             )}
           </button>

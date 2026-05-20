@@ -5,6 +5,7 @@ import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableR
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.js";
 import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
 import { loadConfig, type Config } from "./config.js";
+import { shapePublicSchedule } from "./public.js";
 
 type AllPeopleFields = {
   NetID?: string;
@@ -64,6 +65,81 @@ const MANAGES_OTHER_DEPTS: Record<string, string[]> = {
 export const app = new Hono();
 app.use("*", cors());
 app.use("*", logger());
+
+// ---------- Public endpoints (no auth) -----------------------------------
+
+app.get("/view", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const rows = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const submitted = rows
+    .filter((r) => selectName(r.fields["Schedule Status"]) === "Submitted")
+    .map((r) => ({ id: r.id, name: r.fields["Department Name"] ?? "" }))
+    .filter((d) => !!d.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return c.json(submitted);
+});
+
+app.get("/view/:deptId", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const deptId = c.req.param("deptId");
+  const allDepts = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = allDepts.find((r) => r.id === deptId);
+  if (!dept) return c.json({ error: "Not found" }, 404);
+
+  const status = selectName(dept.fields["Schedule Status"]);
+  if (status !== "Submitted") return c.json({ error: "Schedule not published" }, 403);
+
+  const scheduleRows = await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+    filterByFormula: `{Department} = '${escapeFormulaString(dept.fields["Department Name"] ?? "")}'`,
+  });
+
+  const allPeople = await listAll<AllPeopleFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+  });
+  const peopleById = new Map(
+    allPeople.map((p) => [p.id, { id: p.id, name: p.fields.Name ?? "" }] as const),
+  );
+
+  const normalizedRows = scheduleRows
+    .map((row) => {
+      const iso = normalizeVolunteerDate(selectName(row.fields.Date));
+      if (!iso) return null;
+      return {
+        date: iso,
+        directorIds: toIdList(row.fields["Directors on Shift"]),
+        volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
+      };
+    })
+    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+
+  const shaped = shapePublicSchedule({
+    dept: {
+      id: dept.id,
+      name: dept.fields["Department Name"] ?? "",
+      scheduleStatus: "Submitted",
+      submittedAt: dept.fields["Submitted At"] ?? null,
+    },
+    peopleById,
+    scheduleRows: normalizedRows,
+  });
+
+  c.header("Cache-Control", "public, max-age=60, must-revalidate");
+  return c.json(shaped);
+});
 
 async function getConfig(): Promise<Config | null> {
   return loadConfig();

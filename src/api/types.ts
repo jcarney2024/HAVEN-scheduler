@@ -54,3 +54,35 @@ export type PublicSchedule = {
     volunteers: Array<{ name: string }>;
   }>;
 };
+
+export type MyAssignment = {
+  deptId: string;
+  deptName: string;
+  date: string; // ISO
+  role: "director" | "volunteer";
+  pendingRequestId: string | null;
+};
+
+export type MyAssignmentsResponse = {
+  person: { id: string; name: string; netid: string; email: string };
+  assignments: MyAssignment[];
+};
+
+export type ShiftRequest = {
+  id: string;
+  type: "Drop" | "Named swap";
+  requester: { id: string; name: string; netid: string; role: "director" | "volunteer" };
+  requesterDate: string; // ISO
+  target: { id: string; name: string; netid: string } | null;
+  targetDate: string | null;
+  note: string;
+  status: "Pending" | "Approved" | "Rejected" | "Withdrawn";
+  submittedAt: string;
+  resolvedAt: string | null;
+  resolver: { id: string; name: string } | null;
+};
+
+export type RequestsForDept = {
+  pending: ShiftRequest[];
+  recent: ShiftRequest[];
+};

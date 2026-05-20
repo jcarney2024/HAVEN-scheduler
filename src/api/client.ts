@@ -3,6 +3,8 @@ import type {
   ScheduleResponse,
   PublicDeptListItem,
   PublicSchedule,
+  MyAssignmentsResponse,
+  RequestsForDept,
 } from "./types";
 
 const BASE = "/api";
@@ -78,4 +80,40 @@ export const api = {
   viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
   viewSchedule: (deptId: string) =>
     request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),
+  myAssignments: (callerNetid: string, callerEmail: string) =>
+    request<MyAssignmentsResponse>("/me/assignments", {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+  createRequest: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    deptId: string;
+    requesterDate: string;
+    targetNetid?: string;
+    targetDate?: string;
+    note?: string;
+  }) => request<{ id: string; status: "Pending" }>("/requests", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }),
+  withdrawRequest: (id: string, callerNetid: string, callerEmail: string) =>
+    request<{ id: string; status: "Withdrawn" }>(`/requests/${encodeURIComponent(id)}/withdraw`, {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+  requestsForDept: (deptId: string, callerNetid: string, callerEmail: string) =>
+    request<RequestsForDept>(`/requests/for-dept/${encodeURIComponent(deptId)}`, {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+  resolveRequest: (id: string, input: {
+    callerNetid: string;
+    callerEmail: string;
+    action: "approve" | "reject";
+    note?: string;
+  }) => request<{ id: string; status: "Approved" | "Rejected" }>(`/requests/${encodeURIComponent(id)}/resolve`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }),
 };

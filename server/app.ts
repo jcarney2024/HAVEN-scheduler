@@ -4,7 +4,7 @@ import { logger } from "hono/logger";
 import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable.js";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.js";
 import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
-import { validateRequest } from "./requests.js";
+import { validateRequest, planApply, executeApply } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
 
@@ -1147,4 +1147,141 @@ app.post("/requests/for-dept/:deptId", async (c) => {
     .sort((a, b) => (b.resolvedAt ?? "").localeCompare(a.resolvedAt ?? ""));
 
   return c.json({ pending, recent });
+});
+
+app.post("/requests/:id/resolve", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+
+  const id = c.req.param("id");
+  const { callerNetid, callerEmail, action, note } = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    action?: "approve" | "reject";
+    note?: string;
+  };
+  if (!callerNetid || !callerEmail || (action !== "approve" && action !== "reject")) {
+    return c.json({ error: "Missing or invalid fields" }, 400);
+  }
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const reqMatches = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `RECORD_ID() = '${escapeFormulaString(id)}'`,
+  });
+  const req = reqMatches[0];
+  if (!req) return c.json({ error: "Not found" }, 404);
+  if (selectName(req.fields.Status) !== "Pending")
+    return c.json({ error: "Already resolved" }, 409);
+
+  const deptId = toIdList(req.fields.Department)[0];
+  if (!deptId) return c.json({ error: "Invalid request: no department" }, 409);
+
+  const allRoster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const manageable = manageableDeptIdsFor(allRoster, person.id);
+  if (!manageable.has(deptId)) return c.json({ error: "Not authorized" }, 403);
+
+  const requesterId = toIdList(req.fields.Requester)[0] ?? "";
+  const targetId = toIdList(req.fields.Target)[0] ?? undefined;
+  const requesterIso = normalizeVolunteerDate(selectName(req.fields["Requester Date"]));
+  const targetIso = req.fields["Target Date"]
+    ? normalizeVolunteerDate(selectName(req.fields["Target Date"])) ?? undefined
+    : undefined;
+  if (!requesterIso) return c.json({ error: "Invalid request: bad date" }, 409);
+
+  // Reject path — short-circuit.
+  if (action === "reject") {
+    await patchRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ShiftRequestsTableId,
+      recordId: id,
+      fields: {
+        Status: "Rejected",
+        Resolver: [person.id],
+        "Resolved At": new Date().toISOString(),
+        ...(note ? { "Resolution Note": note } : {}),
+      },
+    });
+    return c.json({ id, status: "Rejected" });
+  }
+
+  // Approve path — re-validate against current schedule.
+  const dept = allRoster.find((r) => r.id === deptId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+
+  const scheduleRows = await listAll<ScheduleRowFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ScheduleTableId,
+    filterByFormula: `{Department} = '${escapeFormulaString(dept.fields["Department Name"] ?? "")}'`,
+  });
+
+  const rowsForApply = scheduleRows
+    .map((r) => {
+      const iso = normalizeVolunteerDate(selectName(r.fields.Date));
+      if (!iso) return null;
+      return {
+        id: r.id,
+        date: iso,
+        directorIds: toIdList(r.fields["Directors on Shift"]),
+        volunteerIds: toIdList(r.fields["Volunteers on Shift"]),
+      };
+    })
+    .filter((r): r is { id: string; date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+
+  const v = validateRequest({
+    scheduleRows: rowsForApply,
+    requesterId,
+    requesterDate: requesterIso,
+    targetId,
+    targetDate: targetIso,
+  });
+  if (!v.ok) return c.json({ error: "Schedule has changed since request was submitted" }, 409);
+
+  let ops;
+  try {
+    ops = planApply({
+      scheduleRows: rowsForApply,
+      requesterId,
+      requesterDate: requesterIso,
+      targetId,
+      targetDate: targetIso,
+    });
+  } catch {
+    return c.json({ error: "Schedule has changed since request was submitted" }, 409);
+  }
+
+  const originalRows = new Map(rowsForApply.map((r) => [r.id, r] as const));
+
+  try {
+    await executeApply({
+      baseId: config.haveNManagementBaseId,
+      scheduleTableId: config.su26ScheduleTableId,
+      ops,
+      originalRows,
+      patchRecord: (opts) => patchRecord(opts),
+    });
+  } catch (err) {
+    console.error("Apply failed", err);
+    return c.json({ error: "Apply failed", partial: { ops } }, 500);
+  }
+
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    recordId: id,
+    fields: {
+      Status: "Approved",
+      Resolver: [person.id],
+      "Resolved At": new Date().toISOString(),
+      ...(note ? { "Resolution Note": note } : {}),
+    },
+  });
+
+  return c.json({ id, status: "Approved" });
 });

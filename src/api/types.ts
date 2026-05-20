@@ -32,5 +32,7 @@ export type ScheduleResponse = {
 
 export type DirectorIdentity = {
   person: { id: string; name: string; netid: string; email: string };
+  /** True if the person is on ITCM or EXEC — has master edit access to every department. */
+  isAdmin?: boolean;
   departments: DepartmentRef[];
 };

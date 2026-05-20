@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { createRecord, escapeFormulaString, listAll, patchRecord } from "./airtable";
+import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates";
 import { computeConflicts, type ScheduleEntry } from "./conflicts";
 import { loadConfig, type Config } from "./config";
@@ -37,6 +37,10 @@ type ScheduleRowFields = {
   "Directors on Shift"?: unknown;
   "Volunteers on Shift"?: unknown;
 };
+
+// Departments whose directors get master access — they can view + edit
+// every department's schedule, not just their own.
+const ADMIN_DEPT_NAMES = ["ITCM", "EXEC"];
 
 export const app = new Hono();
 app.use("*", cors());
@@ -86,12 +90,16 @@ async function findPerson(config: Config, netid: string, email: string) {
   return records[0] ?? null;
 }
 
-async function findDepartmentsForDirector(config: Config, personId: string) {
-  const allDepts = await listAll<Su26RosterFields>({
-    baseId: config.haveNManagementBaseId,
-    tableId: config.su26RosterTableId,
+// A caller has master admin access if they're a director on ITCM or EXEC.
+function isAdminPerson(
+  allRoster: AirtableRecord<Su26RosterFields>[],
+  personId: string,
+): boolean {
+  return allRoster.some((d) => {
+    const name = d.fields["Department Name"] ?? "";
+    if (!ADMIN_DEPT_NAMES.includes(name)) return false;
+    return toIdList(d.fields.Directors).includes(personId);
   });
-  return allDepts.filter((d) => toIdList(d.fields.Directors).includes(personId));
 }
 
 app.post(`/director/:netid`, async (c) => {
@@ -104,10 +112,28 @@ app.post(`/director/:netid`, async (c) => {
   const person = await findPerson(config, netid, email);
   if (!person) return c.json({ error: "Not found" }, 404);
 
-  const depts = await findDepartmentsForDirector(config, person.id);
-  if (depts.length === 0) {
+  const allRoster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const isAdmin = isAdminPerson(allRoster, person.id);
+  const visibleDepts = isAdmin
+    ? allRoster
+    : allRoster.filter((d) => toIdList(d.fields.Directors).includes(person.id));
+
+  if (visibleDepts.length === 0) {
     return c.json({ error: "Not a SU 26 director" }, 403);
   }
+
+  // Sort: admin's home departments first, then others alphabetically by name.
+  const sorted = isAdmin
+    ? [...visibleDepts].sort((a, b) => {
+        const aHome = toIdList(a.fields.Directors).includes(person.id) ? 0 : 1;
+        const bHome = toIdList(b.fields.Directors).includes(person.id) ? 0 : 1;
+        if (aHome !== bHome) return aHome - bHome;
+        return (a.fields["Department Name"] ?? "").localeCompare(b.fields["Department Name"] ?? "");
+      })
+    : visibleDepts;
 
   return c.json({
     person: {
@@ -116,7 +142,8 @@ app.post(`/director/:netid`, async (c) => {
       netid: person.fields.NetID ?? "",
       email: person.fields["Contact Email"] ?? "",
     },
-    departments: depts.map((d) => ({
+    isAdmin,
+    departments: sorted.map((d) => ({
       id: d.id,
       name: d.fields["Department Name"] ?? "",
       scheduleStatus: selectName(d.fields["Schedule Status"]) || "Draft",
@@ -163,7 +190,8 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const dept = allRoster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  const callerIsDeptDirector = toIdList(dept.fields.Directors).includes(caller.id);
+  const callerIsDeptDirector =
+    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(allRoster, caller.id);
 
   // dept name lookup for ScheduleEntry construction
   const deptNameById = new Map<string, string>(
@@ -296,8 +324,10 @@ app.post("/assignment", async (c) => {
   const dept = roster.find((r) => r.id === departmentId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
 
-  if (!toIdList(dept.fields.Directors).includes(caller.id)) {
-    return c.json({ error: "Caller not a director on this department" }, 403);
+  const isAuthorized =
+    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
+  if (!isAuthorized) {
+    return c.json({ error: "Caller not authorized for this department" }, 403);
   }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
@@ -365,8 +395,10 @@ app.post("/submit/:deptId", async (c) => {
   });
   const dept = roster.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Department not found" }, 404);
-  if (!toIdList(dept.fields.Directors).includes(caller.id)) {
-    return c.json({ error: "Not a director on this department" }, 403);
+  const isAuthorized =
+    toIdList(dept.fields.Directors).includes(caller.id) || isAdminPerson(roster, caller.id);
+  if (!isAuthorized) {
+    return c.json({ error: "Not authorized for this department" }, 403);
   }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";

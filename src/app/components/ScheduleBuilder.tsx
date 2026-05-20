@@ -130,7 +130,15 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   return (
     <div className="bg-white rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {identity.isAdmin && (
+            <span
+              className="text-xs px-2 py-1 rounded-full bg-[#0F4D92] text-white font-medium uppercase tracking-wide"
+              title="You can view and edit every department's schedule."
+            >
+              Master access
+            </span>
+          )}
           <span className="text-slate-500 text-sm">Department:</span>
           <DepartmentSwitcher
             departments={identity.departments}

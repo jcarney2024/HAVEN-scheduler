@@ -5,6 +5,7 @@ import type { DirectorIdentity, ScheduleResponse } from "@/api/types";
 import { DepartmentSwitcher } from "./schedule/DepartmentSwitcher";
 import { StatsBar } from "./schedule/StatsBar";
 import { ViewToggle, type ViewMode } from "./schedule/ViewToggle";
+import { SaturdayView } from "./schedule/SaturdayView";
 import { SubmittedView } from "./SubmittedView";
 
 export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
@@ -44,6 +45,10 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
 
   const submitted = data.department.scheduleStatus === "Submitted";
 
+  const handleToggle = (_date: string, _kind: "director" | "volunteer", _personId: string) => {
+    // wired in Task 20
+  };
+
   return (
     <div className="bg-white rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -69,9 +74,20 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
 
       {submitted && <SubmittedView deptName={data.department.name} submittedAt={data.department.submittedAt} />}
 
-      <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-400">
-        {mode === "saturday" ? "Saturday view goes here (next task)" : "Grid view goes here (next task)"}
-      </div>
+      {mode === "saturday" ? (
+        <SaturdayView
+          dates={data.dates}
+          directors={data.roster.directors}
+          volunteers={data.roster.volunteers}
+          assignments={data.assignments}
+          disabled={submitted || !data.callerIsDeptDirector}
+          onToggle={handleToggle}
+        />
+      ) : (
+        <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-400">
+          Grid view goes here (next task)
+        </div>
+      )}
     </div>
   );
 }

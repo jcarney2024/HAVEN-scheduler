@@ -80,10 +80,10 @@ export const api = {
   viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
   viewSchedule: (deptId: string) =>
     request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),
-  myAssignments: (callerNetid: string, callerEmail: string) =>
+  myAssignments: (callerNetid: string, callerEmail: string, opts?: { signIn?: boolean }) =>
     request<MyAssignmentsResponse>("/me/assignments", {
       method: "POST",
-      body: JSON.stringify({ callerNetid, callerEmail }),
+      body: JSON.stringify({ callerNetid, callerEmail, signIn: opts?.signIn === true }),
     }),
   createRequest: (input: {
     callerNetid: string;

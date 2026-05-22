@@ -18,7 +18,7 @@ export function SignInToRequest({
     if (!netid.trim() || !email.trim()) return;
     setSubmitting(true);
     try {
-      const data = await api.myAssignments(netid.trim(), email.trim());
+      const data = await api.myAssignments(netid.trim(), email.trim(), { signIn: true });
       onSignedIn(data, { netid: netid.trim(), email: email.trim() });
     } catch (err) {
       toast.error((err as Error).message ?? "Sign-in failed");

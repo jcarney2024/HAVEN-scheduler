@@ -204,6 +204,38 @@ function selectName(value: unknown): string {
   return "";
 }
 
+/**
+ * Append a row to the SU 26 Login Log. Fire-and-forget — never block or fail
+ * the sign-in if Airtable is slow/down. Errors are logged server-side so we
+ * notice without breaking auth for users.
+ */
+function logSignIn(
+  config: Config,
+  person: AirtableRecord<AllPeopleFields>,
+  surface: "Director" | "Public viewer",
+  userAgent: string,
+): void {
+  const at = new Date();
+  const stamp = at.toISOString().replace("T", " ").slice(0, 16);
+  const name = person.fields.Name ?? person.fields.NetID ?? "Unknown";
+  const summary = `${name} signed in (${surface}) — ${stamp}`;
+  createRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26LoginLogTableId,
+    fields: {
+      Summary: summary,
+      Person: [person.id],
+      NetID: (person.fields.NetID ?? "").toLowerCase(),
+      Email: (person.fields["Contact Email"] ?? "").toLowerCase(),
+      Surface: surface,
+      "Signed In At": at.toISOString(),
+      "User Agent": userAgent.slice(0, 500),
+    },
+  }).catch((err) => {
+    console.error("[login-log] failed to write:", err);
+  });
+}
+
 async function findPerson(config: Config, netid: string, email: string) {
   const safeNetid = escapeFormulaString(netid.toLowerCase());
   const safeEmail = escapeFormulaString(email.toLowerCase());
@@ -283,6 +315,8 @@ app.post(`/director/:netid`, async (c) => {
   if (visibleDepts.length === 0) {
     return c.json({ error: "Not a SU 26 director" }, 403);
   }
+
+  logSignIn(config, person, "Director", c.req.header("user-agent") ?? "");
 
   // Sort: home departments (where they're listed as a director) first, then
   // delegated/admin depts, then alphabetical within each group.
@@ -817,9 +851,10 @@ app.post("/me/assignments", async (c) => {
   const config = await getConfig();
   if (!config) return c.json({ error: "Not configured" }, 400);
 
-  const { callerNetid, callerEmail } = (await c.req.json()) as {
+  const { callerNetid, callerEmail, signIn } = (await c.req.json()) as {
     callerNetid?: string;
     callerEmail?: string;
+    signIn?: boolean;
   };
   if (!callerNetid || !callerEmail) {
     return c.json({ error: "Missing callerNetid / callerEmail" }, 400);
@@ -827,6 +862,10 @@ app.post("/me/assignments", async (c) => {
 
   const person = await findPerson(config, callerNetid, callerEmail);
   if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  if (signIn === true) {
+    logSignIn(config, person, "Public viewer", c.req.header("user-agent") ?? "");
+  }
 
   const [allDepts, allScheduleRows, pendingRequests] = await Promise.all([
     listAll<Su26RosterFields>({

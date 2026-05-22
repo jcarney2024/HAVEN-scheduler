@@ -64,36 +64,36 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 relative overflow-hidden font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 relative overflow-x-hidden font-sans text-slate-900">
       <Toaster position="top-center" richColors />
       <div className="absolute inset-0 z-0">
         <img src={BG_IMAGE} alt="" className="w-full h-full object-cover blur-md scale-105" />
         <div className="absolute inset-0 bg-[#0F4D92]/80" />
       </div>
       <div className="relative z-10 min-h-screen flex flex-col">
-        <header className="p-6 flex items-center justify-between text-white border-b border-white/10">
+        <header className="p-4 sm:p-6 flex items-center justify-between gap-3 text-white border-b border-white/10">
           <button
             type="button"
             onClick={handleBackToLanding}
-            className="flex items-center gap-4 text-left"
+            className="flex items-center gap-3 sm:gap-4 text-left min-w-0"
           >
-            <img src={LOGO_URL} alt="HAVEN Free Clinic" className="h-12 w-auto" />
-            <div className="h-8 w-px bg-white/20" />
-            <p className="text-sm font-medium text-blue-100 tracking-wide uppercase">
+            <img src={LOGO_URL} alt="HAVEN Free Clinic" className="h-10 sm:h-12 w-auto shrink-0" />
+            <div className="hidden sm:block h-8 w-px bg-white/20" />
+            <p className="hidden sm:block text-sm font-medium text-blue-100 tracking-wide uppercase">
               Clinic Schedule
             </p>
           </button>
           {identity && (
             <button
               onClick={handleSignOut}
-              className="text-sm text-blue-100 hover:text-white transition-colors"
+              className="text-sm text-blue-100 hover:text-white transition-colors shrink-0"
             >
               Sign out
             </button>
           )}
         </header>
 
-        <main className="flex-1 flex items-start justify-center p-4 sm:p-6">
+        <main className="flex-1 flex items-start justify-center p-3 sm:p-6">
           <AnimatePresence mode="wait">
             {step === "loading" && (
               <motion.div

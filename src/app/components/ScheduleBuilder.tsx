@@ -225,9 +225,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   }
 
   return (
-    <div className="bg-white rounded-xl p-6 sm:p-8 shadow-lg space-y-6">
+    <div className="bg-white rounded-xl p-4 sm:p-6 lg:p-8 shadow-lg space-y-6 w-full max-w-7xl">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
           {identity.isAdmin && (
             <span
               className="text-xs px-2 py-1 rounded-full bg-[#0F4D92] text-white font-medium uppercase tracking-wide"
@@ -261,7 +261,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
             </span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex border border-slate-300 rounded-lg overflow-hidden">
             {(["assign", "availability", "requests"] as const).map((m) => (
               <button
@@ -275,11 +275,21 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
                     : "bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                {m === "assign"
-                  ? "Assign"
-                  : m === "availability"
-                    ? "Edit availability"
-                    : `Pending Requests${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
+                {m === "assign" ? (
+                  "Assign"
+                ) : m === "availability" ? (
+                  <>
+                    <span className="sm:hidden">Availability</span>
+                    <span className="hidden sm:inline">Edit availability</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sm:hidden">Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}</span>
+                    <span className="hidden sm:inline">
+                      Pending Requests{pendingCount > 0 ? ` (${pendingCount})` : ""}
+                    </span>
+                  </>
+                )}
               </button>
             ))}
           </div>

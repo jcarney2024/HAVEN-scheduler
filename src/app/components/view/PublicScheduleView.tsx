@@ -9,7 +9,7 @@ import { SignInToRequest } from "./SignInToRequest";
 import { MyAssignments } from "./MyAssignments";
 import { MyAvailability } from "./MyAvailability";
 
-export function PublicScheduleView() {
+export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolean } = {}) {
   const [depts, setDepts] = useState<PublicDeptListItem[] | null>(null);
   const [deptId, setDeptId] = useState<string>("");
   const [schedule, setSchedule] = useState<PublicSchedule | null>(null);
@@ -162,6 +162,7 @@ export function PublicScheduleView() {
         </>
       ) : (
         <SignInToRequest
+          autoOpen={autoSignIn}
           onSignedIn={(data, credentials) => setSignedIn({ data, credentials })}
         />
       )}

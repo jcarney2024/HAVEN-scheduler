@@ -4,11 +4,15 @@ import { api } from "@/api/client";
 import type { MyAssignmentsResponse } from "@/api/types";
 
 export function SignInToRequest({
+  autoOpen = false,
   onSignedIn,
 }: {
+  /** When true, render the form expanded by default — used when the user clicked
+   *  "Update my availability" on the landing and shouldn't have to hunt for sign-in. */
+  autoOpen?: boolean;
   onSignedIn: (data: MyAssignmentsResponse, credentials: { netid: string; email: string }) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [netid, setNetid] = useState("");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);

@@ -17,6 +17,7 @@ function initialStepFromUrl(): Step {
 export default function App() {
   const [step, setStep] = useState<Step>(initialStepFromUrl());
   const [identity, setIdentity] = useState<DirectorIdentity | null>(null);
+  const [viewAutoSignIn, setViewAutoSignIn] = useState(false);
 
   useEffect(() => {
     if (step === "loading") {
@@ -55,7 +56,8 @@ export default function App() {
     setStep("lookup");
   }
 
-  function handleOpenView() {
+  function handleOpenView(opts?: { autoSignIn?: boolean }) {
+    setViewAutoSignIn(opts?.autoSignIn === true);
     setStep("view");
   }
 
@@ -120,7 +122,9 @@ export default function App() {
                 identity={identity}
               />
             )}
-            {step === "view" && <PublicScheduleView key="view" />}
+            {step === "view" && (
+              <PublicScheduleView key="view" autoSignIn={viewAutoSignIn} />
+            )}
           </AnimatePresence>
         </main>
 

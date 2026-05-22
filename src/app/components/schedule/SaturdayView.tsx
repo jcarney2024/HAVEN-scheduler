@@ -14,6 +14,7 @@ export function SaturdayView({
   editMode,
   onToggle,
   onRemoveVolunteer,
+  onAcknowledgeVolunteerUpdate,
   readOnly = false,
 }: {
   dates: { iso: string; display: string }[];
@@ -24,6 +25,7 @@ export function SaturdayView({
   editMode: "assign" | "availability";
   onToggle: (date: string, kind: Kind, personId: string) => void;
   onRemoveVolunteer?: (person: Person) => void;
+  onAcknowledgeVolunteerUpdate?: (person: Person) => void;
   readOnly?: boolean;
 }) {
   const [activeIso, setActiveIso] = useState(dates[0]?.iso ?? "");
@@ -42,6 +44,10 @@ export function SaturdayView({
     // Per-row remove handler — volunteers only, never directors.
     const removeFor = (p: Person) =>
       !readOnly && kind === "volunteer" && onRemoveVolunteer ? () => onRemoveVolunteer(p) : undefined;
+    const ackFor = (p: Person) =>
+      !readOnly && kind === "volunteer" && onAcknowledgeVolunteerUpdate
+        ? () => onAcknowledgeVolunteerUpdate(p)
+        : undefined;
 
     if (editMode === "availability") {
       // Show everyone, checkbox = availability for active date.
@@ -62,6 +68,7 @@ export function SaturdayView({
                 readOnly={readOnly}
                 onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
                 onRemove={removeFor(p)}
+                onAcknowledgeUpdate={ackFor(p)}
               />
             ))}
           </div>

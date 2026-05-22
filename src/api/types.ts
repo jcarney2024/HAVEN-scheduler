@@ -13,6 +13,10 @@ export type Person = {
   available: string[]; // ISO dates
   /** True if the availability comes from a director-set override on All People, not the apps base. */
   availabilityOverridden?: boolean;
+  /** ISO timestamp of the volunteer's most recent self-update via the public portal, or null. */
+  volunteerUpdatedAt?: string | null;
+  /** ISO timestamp a director acknowledged the volunteer's most recent self-update. */
+  volunteerUpdateAcknowledgedAt?: string | null;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];
@@ -66,6 +70,15 @@ export type MyAssignment = {
 export type MyAssignmentsResponse = {
   person: { id: string; name: string; netid: string; email: string };
   assignments: MyAssignment[];
+  dates: { iso: string; display: string }[];
+  volunteerAvailability: {
+    /** What the volunteer would see as their own current choices: prior self-update or app baseline. */
+    myDates: string[];
+    source: "volunteer-updated" | "application" | "none";
+    /** True if a director has manually overridden this volunteer's availability — their edits will be saved but not used. */
+    directorOverrideActive: boolean;
+    volunteerUpdatedAt: string | null;
+  };
 };
 
 export type ShiftRequest = {

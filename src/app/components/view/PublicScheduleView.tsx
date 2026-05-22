@@ -7,6 +7,7 @@ import { SaturdayView } from "../schedule/SaturdayView";
 import { displayDate } from "./displayDate";
 import { SignInToRequest } from "./SignInToRequest";
 import { MyAssignments } from "./MyAssignments";
+import { MyAvailability } from "./MyAvailability";
 
 export function PublicScheduleView() {
   const [depts, setDepts] = useState<PublicDeptListItem[] | null>(null);
@@ -147,11 +148,18 @@ export function PublicScheduleView() {
       )}
 
       {signedIn ? (
-        <MyAssignments
-          data={signedIn.data}
-          credentials={signedIn.credentials}
-          onChanged={refetchAssignments}
-        />
+        <>
+          <MyAssignments
+            data={signedIn.data}
+            credentials={signedIn.credentials}
+            onChanged={refetchAssignments}
+          />
+          <MyAvailability
+            data={signedIn.data}
+            credentials={signedIn.credentials}
+            onSaved={refetchAssignments}
+          />
+        </>
       ) : (
         <SignInToRequest
           onSignedIn={(data, credentials) => setSignedIn({ data, credentials })}

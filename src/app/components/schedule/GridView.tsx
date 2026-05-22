@@ -11,7 +11,14 @@ type Props = {
   editMode: "assign" | "availability";
   onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
   onRemoveVolunteer?: (person: Person) => void;
+  onAcknowledgeVolunteerUpdate?: (person: Person) => void;
 };
+
+function hasUnacknowledgedUpdate(person: Person): boolean {
+  if (!person.volunteerUpdatedAt) return false;
+  if (!person.volunteerUpdateAcknowledgedAt) return true;
+  return person.volunteerUpdateAcknowledgedAt < person.volunteerUpdatedAt;
+}
 
 function splitDisplay(display: string): { month: string; day: string } {
   // "May 30th" → { month: "May", day: "30" }
@@ -29,6 +36,7 @@ export function GridView({
   editMode,
   onToggle,
   onRemoveVolunteer,
+  onAcknowledgeVolunteerUpdate,
 }: Props) {
   const byDate = useMemo(
     () => Object.fromEntries(assignments.map((a) => [a.date, a])),
@@ -88,6 +96,12 @@ export function GridView({
 
   function row(person: Person, kind: "director" | "volunteer") {
     const canRemove = kind === "volunteer" && !!onRemoveVolunteer && !disabled;
+    const showUpdated = kind === "volunteer" && hasUnacknowledgedUpdate(person);
+    const updatedTooltip = person.volunteerUpdatedAt
+      ? `Volunteer updated their availability on ${new Date(
+          person.volunteerUpdatedAt,
+        ).toLocaleDateString()}. Click to acknowledge.`
+      : "Volunteer updated their availability.";
     return (
       <tr key={person.id} className="group border-b border-slate-100 last:border-b-0">
         <th
@@ -97,6 +111,19 @@ export function GridView({
         >
           <div className="flex items-center gap-1.5">
             <span className="truncate flex-1">{person.name || person.netid}</span>
+            {showUpdated && (
+              <button
+                type="button"
+                onClick={() =>
+                  onAcknowledgeVolunteerUpdate && onAcknowledgeVolunteerUpdate(person)
+                }
+                disabled={!onAcknowledgeVolunteerUpdate}
+                className="text-[10px] uppercase tracking-wide text-yellow-900 bg-yellow-200 hover:bg-yellow-300 disabled:hover:bg-yellow-200 disabled:cursor-default px-1.5 py-0.5 rounded font-semibold"
+                title={updatedTooltip}
+              >
+                updated
+              </button>
+            )}
             {canRemove && (
               <button
                 type="button"

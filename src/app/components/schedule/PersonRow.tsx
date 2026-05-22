@@ -2,6 +2,16 @@ import type { Person } from "@/api/types";
 import { X } from "lucide-react";
 import { ConflictBadge } from "./ConflictBadge";
 
+/**
+ * True if the volunteer has submitted a self-update of their availability AND
+ * a director hasn't acknowledged it yet (or acked an older update).
+ */
+function hasUnacknowledgedUpdate(person: Person): boolean {
+  if (!person.volunteerUpdatedAt) return false;
+  if (!person.volunteerUpdateAcknowledgedAt) return true;
+  return person.volunteerUpdateAcknowledgedAt < person.volunteerUpdatedAt;
+}
+
 export function PersonRow({
   person,
   isAvailable,
@@ -11,6 +21,7 @@ export function PersonRow({
   readOnly = false,
   onToggle,
   onRemove,
+  onAcknowledgeUpdate,
 }: {
   person: Person;
   isAvailable: boolean;
@@ -21,9 +32,18 @@ export function PersonRow({
   onToggle: () => void;
   /** If provided, shows a small ✕ button. Used to drop a volunteer from a dept. */
   onRemove?: () => void;
+  /** If provided and the volunteer has an unacknowledged self-update, shows an
+   *  "updated" chip that, when clicked, calls this to ack the update. */
+  onAcknowledgeUpdate?: () => void;
 }) {
   const accent = editMode === "availability" ? "accent-amber-500" : "accent-[#0F4D92]";
   const interactive = !readOnly && !disabled;
+  const showUpdatedBadge = !readOnly && hasUnacknowledgedUpdate(person);
+  const updatedTooltip = person.volunteerUpdatedAt
+    ? `Volunteer updated their availability on ${new Date(
+        person.volunteerUpdatedAt,
+      ).toLocaleDateString()}. Click to acknowledge.`
+    : "Volunteer updated their availability since application time.";
 
   return (
     <label
@@ -53,6 +73,21 @@ export function PersonRow({
         >
           override
         </span>
+      )}
+      {showUpdatedBadge && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onAcknowledgeUpdate?.();
+          }}
+          disabled={!onAcknowledgeUpdate}
+          className="text-[10px] uppercase tracking-wide text-yellow-900 bg-yellow-200 hover:bg-yellow-300 disabled:hover:bg-yellow-200 disabled:cursor-default px-1.5 py-0.5 rounded font-semibold"
+          title={updatedTooltip}
+        >
+          updated
+        </button>
       )}
       {!readOnly && <ConflictBadge person={person} />}
       {!readOnly && onRemove && (

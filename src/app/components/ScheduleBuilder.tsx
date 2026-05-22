@@ -154,6 +154,30 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
 
   const handleToggle = editMode === "assign" ? handleAssignmentToggle : handleAvailabilityToggle;
 
+  async function handleAcknowledgeVolunteerUpdate(person: Person) {
+    if (!data) return;
+    // Optimistic: stamp acknowledgedAt locally so the badge clears immediately.
+    const now = new Date().toISOString();
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const target = next.roster.volunteers.find((p) => p.id === person.id);
+      if (target) target.volunteerUpdateAcknowledgedAt = now;
+      return next;
+    });
+    try {
+      await api.acknowledgeVolunteerUpdate({
+        callerNetid: identity.person.netid,
+        callerEmail: identity.person.email,
+        personId: person.id,
+      });
+      toast.success(`Acknowledged ${person.name || person.netid}'s availability update.`);
+    } catch (e) {
+      toast.error((e as Error).message || "Couldn't acknowledge update");
+      reload();
+    }
+  }
+
   if (loading || !data) {
     return <div className="bg-white rounded-xl p-8 shadow-lg text-slate-500">Loading…</div>;
   }
@@ -331,6 +355,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           onRemoveVolunteer={
             submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
           }
+          onAcknowledgeVolunteerUpdate={
+            data.callerIsDeptDirector ? handleAcknowledgeVolunteerUpdate : undefined
+          }
         />
       ) : (
         <GridView
@@ -343,6 +370,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           onToggle={handleToggle}
           onRemoveVolunteer={
             submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
+          }
+          onAcknowledgeVolunteerUpdate={
+            data.callerIsDeptDirector ? handleAcknowledgeVolunteerUpdate : undefined
           }
         />
       )}

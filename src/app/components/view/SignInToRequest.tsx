@@ -30,7 +30,11 @@ export function SignInToRequest({
   if (!open) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-6">
-        <h2 className="text-lg font-semibold mb-2">Need to drop or swap a shift?</h2>
+        <h2 className="text-lg font-semibold mb-2">Drop or swap a shift, or update your availability</h2>
+        <p className="text-sm text-slate-600 mb-3">
+          Sign in to request a drop/swap on one of your shifts, or to update which Saturdays
+          you're available since you first applied.
+        </p>
         <button
           type="button"
           onClick={() => setOpen(true)}

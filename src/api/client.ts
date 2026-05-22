@@ -66,6 +66,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  setMyAvailability: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    availableDates: string[];
+  }) =>
+    request<{ success: true; updatedAt: string }>("/me/availability", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  acknowledgeVolunteerUpdate: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    personId: string;
+  }) =>
+    request<{ success: true; acknowledgedAt: string }>("/availability/acknowledge", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   removeVolunteer: (input: {
     callerNetid: string;
     callerEmail: string;

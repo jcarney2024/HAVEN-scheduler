@@ -16,6 +16,14 @@ type AllPeopleFields = {
   // If non-empty, these REPLACE the applicant-base availability for this person+kind.
   "SU 26 — Available as Director"?: string;
   "SU 26 — Available as Volunteer"?: string;
+  // Volunteer self-update of availability via the public portal. Same comma-separated
+  // format as the override fields. Resolution order in buildPerson (volunteer kind):
+  // director override → volunteer self-update → applicant baseline.
+  "SU 26 — Volunteer-Updated Availability"?: string;
+  "SU 26 — Volunteer Updated At"?: string;
+  // When a director acked the most recent volunteer self-update. If null OR
+  // older than "SU 26 — Volunteer Updated At", the builder shows an updated badge.
+  "SU 26 — Volunteer Update Acknowledged At"?: string;
 };
 
 type Su26RosterFields = {
@@ -516,20 +524,33 @@ app.post(`/schedule/:deptId`, async (c) => {
         ? person?.fields["SU 26 — Available as Director"]
         : person?.fields["SU 26 — Available as Volunteer"];
     const overrideDates = parseAvailabilityOverride(overrideField);
+    const volunteerSelfDates =
+      kind === "volunteer"
+        ? parseAvailabilityOverride(person?.fields["SU 26 — Volunteer-Updated Availability"])
+        : null;
     const baseDates =
       kind === "director" ? directorAvail.get(netid) ?? [] : volAvail.get(netid) ?? [];
-    const available = overrideDates ?? baseDates;
+    // Director override wins; otherwise volunteer self-update; otherwise app baseline.
+    const available = overrideDates ?? volunteerSelfDates ?? baseDates;
     const conflicts = computeConflicts({
       personId: id,
       thisDepartmentId: deptId,
       allSchedule: scheduleEntries,
     });
+    const volunteerUpdatedAt =
+      kind === "volunteer" ? person?.fields["SU 26 — Volunteer Updated At"] ?? null : null;
+    const volunteerUpdateAcknowledgedAt =
+      kind === "volunteer"
+        ? person?.fields["SU 26 — Volunteer Update Acknowledged At"] ?? null
+        : null;
     return {
       id,
       netid,
       name: person?.fields.Name ?? "",
       available,
       availabilityOverridden: overrideDates !== null,
+      volunteerUpdatedAt,
+      volunteerUpdateAcknowledgedAt,
       conflicts,
     };
   }
@@ -745,6 +766,103 @@ app.post("/availability", async (c) => {
   return c.json({ success: true });
 });
 
+/**
+ * Volunteer self-update of their SU 26 availability. The caller proves identity
+ * with their own NetID + email — no director auth needed. Writes
+ * "SU 26 — Volunteer-Updated Availability" + "SU 26 — Volunteer Updated At"
+ * on their All People row and clears any prior "Acknowledged At" so the
+ * schedule builder shows the updated badge again.
+ *
+ * Resolution order in the builder is director override → this field → app baseline,
+ * so a director who has already pinned availability via the override field won't
+ * have it changed by a volunteer self-update.
+ */
+app.post("/me/availability", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    availableDates?: string[]; // ISO dates
+  };
+  const { callerNetid, callerEmail, availableDates } = body;
+  if (!callerNetid || !callerEmail || !Array.isArray(availableDates)) {
+    return c.json({ error: "Missing required field" }, 400);
+  }
+
+  const person = await findPerson(config, callerNetid, callerEmail);
+  if (!person) return c.json({ error: "Unauthorized" }, 401);
+
+  const display = availableDates
+    .map((iso) => normalizeVolunteerDate(iso) ?? iso)
+    .map((iso) => displayDate(iso))
+    .join(", ");
+
+  const now = new Date().toISOString();
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+    recordId: person.id,
+    fields: {
+      "SU 26 — Volunteer-Updated Availability": display,
+      "SU 26 — Volunteer Updated At": now,
+      // New submission ⇒ needs to be re-acknowledged by a director.
+      "SU 26 — Volunteer Update Acknowledged At": null,
+    },
+  });
+
+  return c.json({ success: true, updatedAt: now });
+});
+
+/**
+ * Director acknowledges a volunteer's most recent self-update. Sets
+ * "SU 26 — Volunteer Update Acknowledged At" on the volunteer's All People row.
+ * Same authorization rules as POST /availability — the caller must be a director
+ * for a department this person is on, transitively via MANAGES_OTHER_DEPTS.
+ */
+app.post("/availability/acknowledge", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+    personId?: string;
+  };
+  const { callerNetid, callerEmail, personId } = body;
+  if (!callerNetid || !callerEmail || !personId) {
+    return c.json({ error: "Missing required field" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+
+  const manageable = manageableDeptIdsFor(roster, caller.id);
+  const authorized = roster.some((d) => {
+    if (!manageable.has(d.id)) return false;
+    const dirs = toIdList(d.fields.Directors);
+    const vols = toIdList(d.fields.Volunteers);
+    return dirs.includes(personId) || vols.includes(personId);
+  });
+  if (!authorized) {
+    return c.json({ error: "Not authorized to acknowledge this person's update" }, 403);
+  }
+
+  const now = new Date().toISOString();
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+    recordId: personId,
+    fields: { "SU 26 — Volunteer Update Acknowledged At": now },
+  });
+
+  return c.json({ success: true, acknowledgedAt: now });
+});
+
 app.post("/remove-volunteer", async (c) => {
   const config = await getConfig();
   if (!config) return c.json({ error: "Not configured" }, 400);
@@ -867,21 +985,71 @@ app.post("/me/assignments", async (c) => {
     logSignIn(config, person, "Public viewer", c.req.header("user-agent") ?? "");
   }
 
-  const [allDepts, allScheduleRows, pendingRequests] = await Promise.all([
-    listAll<Su26RosterFields>({
-      baseId: config.haveNManagementBaseId,
-      tableId: config.su26RosterTableId,
-    }),
-    listAll<ScheduleRowFields>({
-      baseId: config.haveNManagementBaseId,
-      tableId: config.su26ScheduleTableId,
-    }),
-    listAll<ShiftRequestFields>({
-      baseId: config.haveNManagementBaseId,
-      tableId: config.su26ShiftRequestsTableId,
-      filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0)`,
-    }),
-  ]);
+  const [allDepts, allScheduleRows, pendingRequests, volunteerApps, volunteerStaff] =
+    await Promise.all([
+      listAll<Su26RosterFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26RosterTableId,
+      }),
+      listAll<ScheduleRowFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26ScheduleTableId,
+      }),
+      listAll<ShiftRequestFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26ShiftRequestsTableId,
+        filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0)`,
+      }),
+      listAll<VolunteerAppFields>({
+        baseId: config.volunteerAppsBaseId,
+        tableId: config.volunteerAppsTableId,
+        fields: ["NetID", "General Availability", "Link your record"],
+      }),
+      listAll<StaffMirrorFields>({
+        baseId: config.volunteerAppsBaseId,
+        tableId: config.volunteerAppsStaffTableId,
+        fields: ["NetID"],
+      }),
+    ]);
+
+  // Resolve this person's current effective volunteer availability. Same priority
+  // as the schedule builder: director override → volunteer self-update → app baseline.
+  const personNetid = (person.fields.NetID ?? "").toLowerCase();
+  const directorOverride = parseAvailabilityOverride(
+    person.fields["SU 26 — Available as Volunteer"],
+  );
+  const volunteerSelfDates = parseAvailabilityOverride(
+    person.fields["SU 26 — Volunteer-Updated Availability"],
+  );
+  let appBaselineDates: string[] = [];
+  if (personNetid) {
+    const volunteerStaffNetidById = new Map<string, string>(
+      volunteerStaff
+        .filter((s) => s.fields.NetID)
+        .map((s) => [s.id, (s.fields.NetID ?? "").toLowerCase()]),
+    );
+    const myApp = volunteerApps.find((r) => {
+      const direct = (r.fields.NetID ?? "").trim().toLowerCase();
+      if (direct && direct === personNetid) return true;
+      const linkedIds = toIdList(r.fields["Link your record"]);
+      return linkedIds.some((id) => volunteerStaffNetidById.get(id) === personNetid);
+    });
+    if (myApp) {
+      const names = toNameList(myApp.fields["General Availability"]);
+      appBaselineDates = names
+        .map((n) => normalizeVolunteerDate(n))
+        .filter((x): x is string => !!x);
+    }
+  }
+  // What to pre-fill the volunteer's editor with: their own most-recent choices.
+  // The director-override is the director's decision and should NOT seed the editor.
+  const myDates = volunteerSelfDates ?? appBaselineDates;
+  const mySource: "volunteer-updated" | "application" | "none" =
+    volunteerSelfDates !== null
+      ? "volunteer-updated"
+      : appBaselineDates.length > 0
+      ? "application"
+      : "none";
 
   const deptIdByName = new Map<string, { id: string; name: string }>();
   for (const d of allDepts) {
@@ -938,6 +1106,13 @@ app.post("/me/assignments", async (c) => {
       email: person.fields["Contact Email"] ?? "",
     },
     assignments,
+    dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
+    volunteerAvailability: {
+      myDates,
+      source: mySource,
+      directorOverrideActive: directorOverride !== null,
+      volunteerUpdatedAt: person.fields["SU 26 — Volunteer Updated At"] ?? null,
+    },
   });
 });
 

@@ -172,11 +172,16 @@ export function SaturdayView({
     const shadowIds = active.shadowIds ?? [];
     const isShadowOn = (p: Person) => kind === "volunteer" && shadowIds.includes(p.id);
 
+    // In read-only mode (public viewer), "available" really means "assigned for
+    // this Saturday" — the public schedule data carries no separate availability
+    // signal. Skip the "not available this date" disclosure and use plainer copy.
+    const heading = readOnly
+      ? `${title} (${available.length} on shift)`
+      : `${title} (${available.length} of ${people.length} available)`;
+
     return (
       <div>
-        <h3 className="font-semibold text-slate-700 mb-2">
-          {title} ({available.length} of {people.length} available)
-        </h3>
+        <h3 className="font-semibold text-slate-700 mb-2">{heading}</h3>
         <div className="space-y-1">
           {available.map((p) => (
             <PersonRow
@@ -194,7 +199,7 @@ export function SaturdayView({
             />
           ))}
         </div>
-        {unavailable.length > 0 && (
+        {!readOnly && unavailable.length > 0 && (
           <details className="mt-3">
             <summary className="text-sm text-slate-500 cursor-pointer">
               {unavailable.length} not available this date
@@ -204,14 +209,14 @@ export function SaturdayView({
                 <PersonRow
                   key={p.id}
                   person={p}
-                  isAvailable={readOnly ? true : false}
+                  isAvailable={false}
                   isAssigned={assignedIds.includes(p.id)}
                   disabled={disabled}
                   editMode="assign"
                   readOnly={readOnly}
                   assignedCount={countFor(p)}
                   isShadow={isShadowOn(p)}
-                  onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
+                  onToggle={() => onToggle(activeIso, kind, p.id)}
                   onRemove={removeFor(p)}
                 />
               ))}

@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import type { MyAssignmentsResponse, PublicDeptListItem, PublicSchedule } from "@/api/types";
+import type {
+  Assignment,
+  MyAssignmentsResponse,
+  Person,
+  PublicDeptListItem,
+  PublicSchedule,
+} from "@/api/types";
 import { SaturdayView } from "../schedule/SaturdayView";
 import { displayDate } from "./displayDate";
 import { SignInToRequest } from "./SignInToRequest";
@@ -113,23 +119,7 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
             <h3 className="text-xl font-semibold">{schedule.deptName}</h3>
           </div>
 
-          <SaturdayView
-            dates={schedule.dates.map((d) => ({ iso: d.date, display: displayDate(d.date) }))}
-            directors={schedule.dates.flatMap((d) => d.directors).map(toPseudoPerson("director"))}
-            volunteers={schedule.dates
-              .flatMap((d) => d.volunteers)
-              .map(toPseudoVolunteer)}
-            assignments={schedule.dates.map((d) => ({
-              date: d.date,
-              directorIds: d.directors.map((p) => pseudoId("director", p.name)),
-              volunteerIds: d.volunteers.map((p) => pseudoVolunteerId(p)),
-              shadowIds: [],
-            }))}
-            disabled
-            editMode="assign"
-            onToggle={() => {}}
-            readOnly
-          />
+          <PublicScheduleBody schedule={schedule} />
         </div>
       )}
 
@@ -156,34 +146,99 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
   );
 }
 
-function pseudoId(kind: "director" | "volunteer", name: string): string {
-  return `${kind}:${name}`;
-}
+/**
+ * Reuses SaturdayView in read-only mode by building the same data shape it
+ * already understands. Two non-obvious bits:
+ *
+ *   1) Pseudo-people must be deduped by (name, role) — a volunteer on N
+ *      Saturdays should appear once in `volunteers`, not N times. Their
+ *      `available` array carries the list of dates they're actually on so
+ *      SaturdayView's "show available" filter renders them on the right tabs.
+ *   2) Shadow volunteers get a separate pseudo-ID and a "(shadow)" name
+ *      suffix so they're visually distinct without leaning on the shadow
+ *      pill (which we don't wire up for the public view).
+ */
+function PublicScheduleBody({ schedule }: { schedule: PublicSchedule }) {
+  const { dates, directors, volunteers, assignments } = useMemo(() => {
+    const directorDates = new Map<string, string[]>();
+    const volunteerEntries = new Map<
+      string,
+      { name: string; shadow: boolean; available: string[] }
+    >();
 
-function toPseudoPerson(kind: "director" | "volunteer") {
-  return (p: { name: string }) => ({
-    id: pseudoId(kind, p.name),
-    netid: "",
-    name: p.name,
-    available: [],
-    conflicts: { sameDay: [], crossTerm: [] },
-  });
-}
+    for (const d of schedule.dates) {
+      for (const dr of d.directors) {
+        if (!dr.name) continue;
+        if (!directorDates.has(dr.name)) directorDates.set(dr.name, []);
+        directorDates.get(dr.name)!.push(d.date);
+      }
+      for (const v of d.volunteers) {
+        if (!v.name) continue;
+        const shadow = !!v.shadow;
+        const key = `${v.name}|${shadow ? "s" : "r"}`;
+        let entry = volunteerEntries.get(key);
+        if (!entry) {
+          entry = { name: v.name, shadow, available: [] };
+          volunteerEntries.set(key, entry);
+        }
+        entry.available.push(d.date);
+      }
+    }
 
-// Volunteers may be shadows; suffix the displayed name so it's obvious. The
-// pseudo-ID has to differ from the regular variant to avoid collisions on
-// Saturdays where someone appears as a regular in one dept and shadow in
-// another, even though that's an unusual case for the read-only view.
-function pseudoVolunteerId(p: { name: string; shadow?: boolean }): string {
-  return p.shadow ? `volunteer-shadow:${p.name}` : pseudoId("volunteer", p.name);
-}
+    const directorPeople: Person[] = [...directorDates.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, available]) => ({
+        id: `director:${name}`,
+        netid: "",
+        name,
+        available,
+        conflicts: { sameDay: [], crossTerm: [] },
+      }));
 
-function toPseudoVolunteer(p: { name: string; shadow?: boolean }) {
-  return {
-    id: pseudoVolunteerId(p),
-    netid: "",
-    name: p.shadow ? `${p.name} (shadow)` : p.name,
-    available: [],
-    conflicts: { sameDay: [], crossTerm: [] },
-  };
+    const volunteerPeople: Person[] = [...volunteerEntries.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => ({
+        id: `${entry.shadow ? "volunteer-shadow" : "volunteer"}:${entry.name}`,
+        netid: "",
+        name: entry.shadow ? `${entry.name} (shadow)` : entry.name,
+        available: entry.available,
+        conflicts: { sameDay: [], crossTerm: [] },
+      }));
+
+    const assignmentList: Assignment[] = schedule.dates.map((d) => {
+      const regulars = d.volunteers.filter((v) => !v.shadow);
+      const shadows = d.volunteers.filter((v) => v.shadow);
+      return {
+        date: d.date,
+        directorIds: d.directors.filter((p) => !!p.name).map((p) => `director:${p.name}`),
+        volunteerIds: regulars.filter((v) => !!v.name).map((v) => `volunteer:${v.name}`),
+        shadowIds: shadows.filter((v) => !!v.name).map((v) => `volunteer-shadow:${v.name}`),
+      };
+    });
+
+    const dateRefs = schedule.dates.map((d) => ({
+      iso: d.date,
+      display: displayDate(d.date),
+    }));
+
+    return {
+      dates: dateRefs,
+      directors: directorPeople,
+      volunteers: volunteerPeople,
+      assignments: assignmentList,
+    };
+  }, [schedule]);
+
+  return (
+    <SaturdayView
+      dates={dates}
+      directors={directors}
+      volunteers={volunteers}
+      assignments={assignments}
+      disabled
+      editMode="assign"
+      onToggle={() => {}}
+      readOnly
+    />
+  );
 }

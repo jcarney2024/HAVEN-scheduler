@@ -109,7 +109,11 @@ app.get("/view", async (c) => {
     baseId: config.haveNManagementBaseId,
     tableId: config.su26RosterTableId,
   });
+  // Only surface depts whose director has clicked Submit at least once.
+  // Submit is just an informational timestamp now (no lock), but it's still
+  // the signal of "this schedule is ready for volunteers to see."
   const depts = rows
+    .filter((r) => !!r.fields["Submitted At"])
     .map((r) => ({ id: r.id, name: r.fields["Department Name"] ?? "" }))
     .filter((d) => !!d.name)
     .sort((a, b) => a.name.localeCompare(b.name));

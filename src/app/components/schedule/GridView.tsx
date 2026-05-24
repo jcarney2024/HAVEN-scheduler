@@ -43,6 +43,15 @@ export function GridView({
     [assignments],
   );
 
+  // Per-volunteer count of in-department shifts assigned. Updates live.
+  const volunteerAssignedCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of assignments) {
+      for (const id of a.volunteerIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [assignments]);
+
   function cell(person: Person, kind: "director" | "volunteer", iso: string) {
     const available = person.available.includes(iso);
 
@@ -111,6 +120,16 @@ export function GridView({
         >
           <div className="flex items-center gap-1.5">
             <span className="truncate flex-1">{person.name || person.netid}</span>
+            {kind === "volunteer" &&
+              editMode === "assign" &&
+              person.minShiftsWanted != null && (
+                <span
+                  className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1 py-0.5 rounded tabular-nums shrink-0"
+                  title={`Wants at least ${person.minShiftsWanted} shift${person.minShiftsWanted === "1" ? "" : "s"} this term. Currently assigned to ${volunteerAssignedCount.get(person.id) ?? 0} in this department.`}
+                >
+                  {volunteerAssignedCount.get(person.id) ?? 0} / {person.minShiftsWanted}
+                </span>
+              )}
             {showUpdated && (
               <button
                 type="button"

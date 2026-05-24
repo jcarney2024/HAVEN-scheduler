@@ -17,6 +17,8 @@ export type Person = {
   volunteerUpdatedAt?: string | null;
   /** ISO timestamp a director acknowledged the volunteer's most recent self-update. */
   volunteerUpdateAcknowledgedAt?: string | null;
+  /** Raw "Minimum Shifts Wanted" choice from Volunteer Training Attendance ("4"–"9+"). Volunteers only; null if no training record or no value set. */
+  minShiftsWanted?: string | null;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];

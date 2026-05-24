@@ -35,6 +35,16 @@ export function SaturdayView({
   );
   const active = assignmentByIso[activeIso] ?? { date: activeIso, directorIds: [], volunteerIds: [] };
 
+  // Per-volunteer count of in-department shifts already assigned, derived from
+  // the current assignments array so it updates live as the director toggles.
+  const volunteerAssignedCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of assignments) {
+      for (const id of a.volunteerIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [assignments]);
+
   function tabHasAssignments(iso: string) {
     const a = assignmentByIso[iso];
     return !!a && (a.directorIds.length + a.volunteerIds.length > 0);
@@ -48,6 +58,9 @@ export function SaturdayView({
       !readOnly && kind === "volunteer" && onAcknowledgeVolunteerUpdate
         ? () => onAcknowledgeVolunteerUpdate(p)
         : undefined;
+
+    const countFor = (p: Person) =>
+      kind === "volunteer" ? volunteerAssignedCount.get(p.id) ?? 0 : undefined;
 
     if (editMode === "availability") {
       // Show everyone, checkbox = availability for active date.
@@ -95,6 +108,7 @@ export function SaturdayView({
               disabled={disabled}
               editMode="assign"
               readOnly={readOnly}
+              assignedCount={countFor(p)}
               onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
               onRemove={removeFor(p)}
             />
@@ -115,6 +129,7 @@ export function SaturdayView({
                   disabled={disabled}
                   editMode="assign"
                   readOnly={readOnly}
+                  assignedCount={countFor(p)}
                   onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
                   onRemove={removeFor(p)}
                 />

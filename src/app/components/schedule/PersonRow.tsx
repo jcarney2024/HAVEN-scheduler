@@ -19,6 +19,7 @@ export function PersonRow({
   disabled,
   editMode = "assign",
   readOnly = false,
+  assignedCount,
   onToggle,
   onRemove,
   onAcknowledgeUpdate,
@@ -29,6 +30,9 @@ export function PersonRow({
   disabled: boolean;
   editMode?: "assign" | "availability";
   readOnly?: boolean;
+  /** Count of in-department shifts this volunteer is already assigned to. When
+   *  provided alongside person.minShiftsWanted, the row shows an "X / N" pill. */
+  assignedCount?: number;
   onToggle: () => void;
   /** If provided, shows a small ✕ button. Used to drop a volunteer from a dept. */
   onRemove?: () => void;
@@ -63,6 +67,17 @@ export function PersonRow({
         />
       )}
       <span className="flex-1">{person.name || person.netid}</span>
+      {!readOnly &&
+        editMode === "assign" &&
+        person.minShiftsWanted != null &&
+        assignedCount != null && (
+          <span
+            className="text-[11px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded tabular-nums"
+            title={`Wants at least ${person.minShiftsWanted} shift${person.minShiftsWanted === "1" ? "" : "s"} this term. Currently assigned to ${assignedCount} in this department.`}
+          >
+            {assignedCount} / {person.minShiftsWanted}
+          </span>
+        )}
       {!readOnly && editMode === "assign" && !isAvailable && (
         <span className="text-xs text-slate-400">not avail</span>
       )}

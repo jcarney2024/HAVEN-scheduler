@@ -52,6 +52,11 @@ type StaffMirrorFields = {
   Name?: string;
 };
 
+type VolunteerTrainingAttendanceFields = {
+  "Applicant Record"?: unknown;
+  "Minimum Shifts Wanted"?: unknown;
+};
+
 type ScheduleRowFields = {
   Department?: unknown;
   Date?: unknown;
@@ -387,6 +392,7 @@ app.post(`/schedule/:deptId`, async (c) => {
     allVolunteerApps,
     directorStaff,
     volunteerStaff,
+    volunteerTraining,
   ] = await Promise.all([
     listAll<Su26RosterFields>({
       baseId: config.haveNManagementBaseId,
@@ -415,6 +421,11 @@ app.post(`/schedule/:deptId`, async (c) => {
       baseId: config.volunteerAppsBaseId,
       tableId: config.volunteerAppsStaffTableId,
       fields: ["NetID"],
+    }),
+    listAll<VolunteerTrainingAttendanceFields>({
+      baseId: config.volunteerAppsBaseId,
+      tableId: config.volunteerTrainingAttendanceTableId,
+      fields: ["Applicant Record", "Minimum Shifts Wanted"],
     }),
   ]);
 
@@ -486,6 +497,31 @@ app.post(`/schedule/:deptId`, async (c) => {
     );
   }
 
+  // applicantRecordId → "Minimum Shifts Wanted" raw value ("4"…"9+").
+  // Training records without a min-shifts value are skipped — those volunteers
+  // get no badge.
+  const minShiftsByAppId = new Map<string, string>();
+  for (const r of volunteerTraining) {
+    const min = selectName(r.fields["Minimum Shifts Wanted"]);
+    if (!min) continue;
+    const appId = toIdList(r.fields["Applicant Record"])[0];
+    if (!appId) continue;
+    // First record wins — the Applicant Record link is configured as
+    // prefersSingleRecordLink so duplicates aren't expected.
+    if (!minShiftsByAppId.has(appId)) minShiftsByAppId.set(appId, min);
+  }
+  const volMinShifts = new Map<string, string>();
+  for (const r of allVolunteerApps) {
+    const nid = resolveAppNetid(
+      r.fields.NetID,
+      r.fields["Link your record"],
+      volunteerStaffNetidById,
+    );
+    if (!nid) continue;
+    const min = minShiftsByAppId.get(r.id);
+    if (min) volMinShifts.set(nid, min);
+  }
+
   // fetch All People for everyone on this dept's roster (one batch)
   const dirIds = toIdList(dept.fields.Directors);
   const volIds = toIdList(dept.fields.Volunteers);
@@ -543,6 +579,8 @@ app.post(`/schedule/:deptId`, async (c) => {
       kind === "volunteer"
         ? person?.fields["SU 26 — Volunteer Update Acknowledged At"] ?? null
         : null;
+    const minShiftsWanted =
+      kind === "volunteer" ? volMinShifts.get(netid) ?? null : null;
     return {
       id,
       netid,
@@ -551,6 +589,7 @@ app.post(`/schedule/:deptId`, async (c) => {
       availabilityOverridden: overrideDates !== null,
       volunteerUpdatedAt,
       volunteerUpdateAcknowledgedAt,
+      minShiftsWanted,
       conflicts,
     };
   }

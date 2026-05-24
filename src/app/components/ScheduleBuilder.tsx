@@ -296,6 +296,16 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
             selectedId={selectedDeptId}
             onSelect={setSelectedDeptId}
           />
+          {data.department.submittedAt && (
+            <span
+              className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 font-medium"
+              title={`Marked submitted ${new Date(data.department.submittedAt).toLocaleString()}${
+                data.department.submittedByName ? ` by ${data.department.submittedByName}` : ""
+              }. Edits after this point still save normally — re-click Submit to refresh the stamp.`}
+            >
+              Submitted
+            </span>
+          )}
           {saving ? (
             <span className="text-xs text-slate-500 flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />

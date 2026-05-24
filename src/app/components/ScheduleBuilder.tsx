@@ -56,7 +56,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const persist = useDebouncedSaver(async (assignment: Assignment, deptId: string) => {
     setSaving(true);
     try {
-      await api.assign({
+      const res = await api.assign({
         callerNetid: identity.person.netid,
         callerEmail: identity.person.email,
         departmentId: deptId,
@@ -66,6 +66,20 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         shadowIds: assignment.shadowIds,
       });
       setLastSavedAt(new Date());
+      if (res.statusReverted) {
+        // Server demoted the dept back to Draft because we edited a submitted
+        // schedule. Sync local state so the UI shows Draft + the Submit button
+        // reappears, and warn the director loudly so they remember to resubmit.
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                department: { ...prev.department, scheduleStatus: "Draft", submittedAt: null },
+              }
+            : prev,
+        );
+        toast.warning("Schedule moved back to Draft — resubmit when ready so volunteers see your changes.");
+      }
     } catch (e) {
       toast.error((e as Error).message || "Save failed");
       reload(); // revert by reloading server truth
@@ -273,6 +287,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           ? ` and unscheduled from ${res.unscheduledCount} Saturday${res.unscheduledCount === 1 ? "" : "s"}`
           : "";
       toast.success(`${removeTarget.name || removeTarget.netid} removed from ${data.department.name}${note}.`);
+      if (res.statusReverted) {
+        toast.warning("Schedule moved back to Draft — resubmit when ready so volunteers see your changes.");
+      }
       setRemoveTarget(null);
       reload();
     } catch (e) {
@@ -401,11 +418,11 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           directors={data.roster.directors}
           volunteers={data.roster.volunteers}
           assignments={data.assignments}
-          disabled={submitted || !data.callerIsDeptDirector}
+          disabled={!data.callerIsDeptDirector}
           editMode={editMode}
           onToggle={handleToggle}
           onRemoveVolunteer={
-            submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
+            !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
           }
           onAcknowledgeVolunteerUpdate={
             data.callerIsDeptDirector ? handleAcknowledgeVolunteerUpdate : undefined
@@ -417,11 +434,11 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           directors={data.roster.directors}
           volunteers={data.roster.volunteers}
           assignments={data.assignments}
-          disabled={submitted || !data.callerIsDeptDirector}
+          disabled={!data.callerIsDeptDirector}
           editMode={editMode}
           onToggle={handleToggle}
           onRemoveVolunteer={
-            submitted || !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
+            !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
           }
           onAcknowledgeVolunteerUpdate={
             data.callerIsDeptDirector ? handleAcknowledgeVolunteerUpdate : undefined

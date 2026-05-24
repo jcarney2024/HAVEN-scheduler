@@ -47,7 +47,7 @@ export const api = {
     volunteerIds: string[];
     shadowIds: string[];
   }) =>
-    request<{ success: true }>("/assignment", {
+    request<{ success: true; statusReverted?: boolean }>("/assignment", {
       method: "POST",
       body: JSON.stringify(input),
     }),
@@ -92,10 +92,13 @@ export const api = {
     personId: string;
     reason?: string;
   }) =>
-    request<{ success: true; unscheduledCount: number }>("/remove-volunteer", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    request<{ success: true; unscheduledCount: number; statusReverted?: boolean }>(
+      "/remove-volunteer",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    ),
   viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
   viewSchedule: (deptId: string) =>
     request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),

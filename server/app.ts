@@ -672,9 +672,6 @@ app.post("/assignment", async (c) => {
   }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
-  if (statusName === "Submitted") {
-    return c.json({ error: "Schedule already submitted" }, 409);
-  }
 
   // find existing row for (dept, date)
   const all = await listAll<ScheduleRowFields>({
@@ -717,7 +714,24 @@ app.post("/assignment", async (c) => {
     });
   }
 
-  return c.json({ success: true });
+  // If the dept was already Submitted, an edit retracts that. Push status
+  // back to Draft so the public viewer hides the in-progress changes; the
+  // director gets a UI toast prompting them to resubmit when ready.
+  const statusReverted = statusName === "Submitted";
+  if (statusReverted) {
+    await patchRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26RosterTableId,
+      recordId: dept.id,
+      fields: {
+        "Schedule Status": "Draft",
+        "Submitted At": null,
+        "Submitted By": [],
+      },
+    });
+  }
+
+  return c.json({ success: true, statusReverted });
 });
 
 app.post("/submit/:deptId", async (c) => {
@@ -950,9 +964,6 @@ app.post("/remove-volunteer", async (c) => {
   }
 
   const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
-  if (statusName === "Submitted") {
-    return c.json({ error: "Schedule already submitted — unlock first" }, 409);
-  }
 
   // 1. Strip the person from the dept's Volunteers list.
   const newVols = toIdList(dept.fields.Volunteers).filter((id) => id !== personId);
@@ -1025,7 +1036,23 @@ app.post("/remove-volunteer", async (c) => {
     console.error("[remove-volunteer] failed to write audit log:", err);
   }
 
-  return c.json({ success: true, unscheduledCount: affected.length });
+  // Removing a volunteer counts as an edit — if the dept was Submitted,
+  // revert to Draft just like an assignment edit would.
+  const statusReverted = statusName === "Submitted";
+  if (statusReverted) {
+    await patchRecord({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26RosterTableId,
+      recordId: dept.id,
+      fields: {
+        "Schedule Status": "Draft",
+        "Submitted At": null,
+        "Submitted By": [],
+      },
+    });
+  }
+
+  return c.json({ success: true, unscheduledCount: affected.length, statusReverted });
 });
 
 app.post("/me/assignments", async (c) => {

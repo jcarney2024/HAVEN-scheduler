@@ -30,9 +30,6 @@ type Su26RosterFields = {
   "Department Name"?: string;
   Directors?: unknown;
   Volunteers?: unknown;
-  "Schedule Status"?: unknown;
-  "Submitted At"?: string;
-  "Submitted By"?: unknown;
 };
 
 type DirectorAppFields = {
@@ -110,13 +107,12 @@ app.get("/view", async (c) => {
     baseId: config.haveNManagementBaseId,
     tableId: config.su26RosterTableId,
   });
-  const submitted = rows
-    .filter((r) => selectName(r.fields["Schedule Status"]) === "Submitted")
+  const depts = rows
     .map((r) => ({ id: r.id, name: r.fields["Department Name"] ?? "" }))
     .filter((d) => !!d.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return c.json(submitted);
+  return c.json(depts);
 });
 
 app.get("/view/:deptId", async (c) => {
@@ -130,9 +126,6 @@ app.get("/view/:deptId", async (c) => {
   });
   const dept = allDepts.find((r) => r.id === deptId);
   if (!dept) return c.json({ error: "Not found" }, 404);
-
-  const status = selectName(dept.fields["Schedule Status"]);
-  if (status !== "Submitted") return c.json({ error: "Schedule not published" }, 403);
 
   const scheduleRows = await listAll<ScheduleRowFields>({
     baseId: config.haveNManagementBaseId,
@@ -165,8 +158,6 @@ app.get("/view/:deptId", async (c) => {
     dept: {
       id: dept.id,
       name: dept.fields["Department Name"] ?? "",
-      scheduleStatus: "Submitted",
-      submittedAt: dept.fields["Submitted At"] ?? null,
     },
     peopleById,
     scheduleRows: normalizedRows,
@@ -368,8 +359,6 @@ app.post(`/director/:netid`, async (c) => {
     departments: sorted.map((d) => ({
       id: d.id,
       name: d.fields["Department Name"] ?? "",
-      scheduleStatus: selectName(d.fields["Schedule Status"]) || "Draft",
-      submittedAt: d.fields["Submitted At"] ?? null,
       pendingRequestCount: pendingCountByDept.get(d.id) ?? 0,
     })),
   });
@@ -600,8 +589,6 @@ app.post(`/schedule/:deptId`, async (c) => {
     };
   }
 
-  const scheduleStatus = selectName(dept.fields["Schedule Status"]) || "Draft";
-
   const assignmentsByDate = new Map<
     string,
     { directorIds: string[]; volunteerIds: string[]; shadowIds: string[] }
@@ -623,8 +610,6 @@ app.post(`/schedule/:deptId`, async (c) => {
     department: {
       id: dept.id,
       name: dept.fields["Department Name"] ?? "",
-      scheduleStatus,
-      submittedAt: dept.fields["Submitted At"] ?? null,
     },
     dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
     roster: {
@@ -671,8 +656,6 @@ app.post("/assignment", async (c) => {
     return c.json({ error: "Caller not authorized for this department" }, 403);
   }
 
-  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
-
   // find existing row for (dept, date)
   const all = await listAll<ScheduleRowFields>({
     baseId: config.haveNManagementBaseId,
@@ -713,65 +696,6 @@ app.post("/assignment", async (c) => {
       fields,
     });
   }
-
-  // If the dept was already Submitted, an edit retracts that. Push status
-  // back to Draft so the public viewer hides the in-progress changes; the
-  // director gets a UI toast prompting them to resubmit when ready.
-  const statusReverted = statusName === "Submitted";
-  if (statusReverted) {
-    await patchRecord({
-      baseId: config.haveNManagementBaseId,
-      tableId: config.su26RosterTableId,
-      recordId: dept.id,
-      fields: {
-        "Schedule Status": "Draft",
-        "Submitted At": null,
-        "Submitted By": [],
-      },
-    });
-  }
-
-  return c.json({ success: true, statusReverted });
-});
-
-app.post("/submit/:deptId", async (c) => {
-  const config = await getConfig();
-  if (!config) return c.json({ error: "Not configured" }, 400);
-  const deptId = c.req.param("deptId");
-  const { callerNetid, callerEmail } = (await c.req.json()) as {
-    callerNetid?: string;
-    callerEmail?: string;
-  };
-  if (!deptId || !callerNetid || !callerEmail) {
-    return c.json({ error: "Missing field" }, 400);
-  }
-
-  const caller = await findPerson(config, callerNetid, callerEmail);
-  if (!caller) return c.json({ error: "Caller not verified" }, 403);
-
-  const roster = await listAll<Su26RosterFields>({
-    baseId: config.haveNManagementBaseId,
-    tableId: config.su26RosterTableId,
-  });
-  const dept = roster.find((r) => r.id === deptId);
-  if (!dept) return c.json({ error: "Department not found" }, 404);
-  if (!manageableDeptIdsFor(roster, caller.id).has(deptId)) {
-    return c.json({ error: "Not authorized for this department" }, 403);
-  }
-
-  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
-  if (statusName === "Submitted") return c.json({ error: "Already submitted" }, 409);
-
-  await patchRecord({
-    baseId: config.haveNManagementBaseId,
-    tableId: config.su26RosterTableId,
-    recordId: dept.id,
-    fields: {
-      "Schedule Status": "Submitted",
-      "Submitted At": new Date().toISOString(),
-      "Submitted By": [caller.id],
-    },
-  });
 
   return c.json({ success: true });
 });
@@ -963,8 +887,6 @@ app.post("/remove-volunteer", async (c) => {
     return c.json({ error: "Not authorized for this department" }, 403);
   }
 
-  const statusName = selectName(dept.fields["Schedule Status"]) || "Draft";
-
   // 1. Strip the person from the dept's Volunteers list.
   const newVols = toIdList(dept.fields.Volunteers).filter((id) => id !== personId);
   await patchRecord({
@@ -1036,23 +958,7 @@ app.post("/remove-volunteer", async (c) => {
     console.error("[remove-volunteer] failed to write audit log:", err);
   }
 
-  // Removing a volunteer counts as an edit — if the dept was Submitted,
-  // revert to Draft just like an assignment edit would.
-  const statusReverted = statusName === "Submitted";
-  if (statusReverted) {
-    await patchRecord({
-      baseId: config.haveNManagementBaseId,
-      tableId: config.su26RosterTableId,
-      recordId: dept.id,
-      fields: {
-        "Schedule Status": "Draft",
-        "Submitted At": null,
-        "Submitted By": [],
-      },
-    });
-  }
-
-  return c.json({ success: true, unscheduledCount: affected.length, statusReverted });
+  return c.json({ success: true, unscheduledCount: affected.length });
 });
 
 app.post("/me/assignments", async (c) => {

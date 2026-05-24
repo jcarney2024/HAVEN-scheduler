@@ -14,7 +14,6 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
   const [deptId, setDeptId] = useState<string>("");
   const [schedule, setSchedule] = useState<PublicSchedule | null>(null);
   const [loading, setLoading] = useState(false);
-  const [notPublished, setNotPublished] = useState(false);
   const [signedIn, setSignedIn] = useState<{
     data: MyAssignmentsResponse;
     credentials: { netid: string; email: string };
@@ -40,12 +39,10 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
   useEffect(() => {
     if (!deptId) {
       setSchedule(null);
-      setNotPublished(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    setNotPublished(false);
     api
       .viewSchedule(deptId)
       .then((s) => {
@@ -53,10 +50,7 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
       })
       .catch((err: Error & { status?: number }) => {
         if (cancelled) return;
-        if (err.status === 403) {
-          setNotPublished(true);
-          setSchedule(null);
-        } else if (err.status === 404) {
+        if (err.status === 404) {
           toast.error("Department not found");
           setSchedule(null);
         } else {
@@ -113,21 +107,10 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
         </div>
       )}
 
-      {notPublished && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-900">
-          This schedule hasn't been published yet.
-        </div>
-      )}
-
-      {schedule && !loading && !notPublished && (
+      {schedule && !loading && (
         <div className="bg-white rounded-xl shadow-lg p-6">
           <div className="mb-4">
             <h3 className="text-xl font-semibold">{schedule.deptName}</h3>
-            {schedule.submittedAt && (
-              <p className="text-sm text-slate-500">
-                Published {new Date(schedule.submittedAt).toLocaleDateString()}
-              </p>
-            )}
           </div>
 
           <SaturdayView

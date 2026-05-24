@@ -1,8 +1,6 @@
 export type DepartmentRef = {
   id: string;
   name: string;
-  scheduleStatus: "Draft" | "Submitted";
-  submittedAt: string | null;
   pendingRequestCount: number;
 };
 
@@ -36,7 +34,7 @@ export type Assignment = {
 
 export type ScheduleResponse = {
   callerIsDeptDirector: boolean;
-  department: { id: string; name: string; scheduleStatus: string; submittedAt: string | null };
+  department: { id: string; name: string };
   dates: { iso: string; display: string }[];
   roster: { directors: Person[]; volunteers: Person[] };
   assignments: Assignment[];
@@ -56,7 +54,6 @@ export type PublicDeptListItem = {
 
 export type PublicSchedule = {
   deptName: string;
-  submittedAt: string | null;
   dates: Array<{
     date: string; // ISO Saturday key
     directors: Array<{ name: string }>;

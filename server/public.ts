@@ -1,5 +1,5 @@
 export type PublicScheduleInput = {
-  dept: { id: string; name: string; scheduleStatus: "Draft" | "Submitted"; submittedAt: string | null };
+  dept: { id: string; name: string };
   peopleById: Map<string, { id: string; name: string }>;
   scheduleRows: Array<{
     date: string;
@@ -11,7 +11,6 @@ export type PublicScheduleInput = {
 
 export type PublicSchedule = {
   deptName: string;
-  submittedAt: string | null;
   dates: Array<{
     date: string;
     directors: Array<{ name: string }>;
@@ -51,7 +50,6 @@ export function shapePublicSchedule(input: PublicScheduleInput): PublicSchedule 
 
   return {
     deptName: dept.name,
-    submittedAt: dept.submittedAt,
     dates,
   };
 }

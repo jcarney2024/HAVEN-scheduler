@@ -47,14 +47,9 @@ export const api = {
     volunteerIds: string[];
     shadowIds: string[];
   }) =>
-    request<{ success: true; statusReverted?: boolean }>("/assignment", {
+    request<{ success: true }>("/assignment", {
       method: "POST",
       body: JSON.stringify(input),
-    }),
-  submit: (deptId: string, callerNetid: string, callerEmail: string) =>
-    request<{ success: true }>(`/submit/${encodeURIComponent(deptId)}`, {
-      method: "POST",
-      body: JSON.stringify({ callerNetid, callerEmail }),
     }),
   setAvailability: (input: {
     callerNetid: string;
@@ -92,13 +87,10 @@ export const api = {
     personId: string;
     reason?: string;
   }) =>
-    request<{ success: true; unscheduledCount: number; statusReverted?: boolean }>(
-      "/remove-volunteer",
-      {
-        method: "POST",
-        body: JSON.stringify(input),
-      },
-    ),
+    request<{ success: true; unscheduledCount: number }>("/remove-volunteer", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
   viewSchedule: (deptId: string) =>
     request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),

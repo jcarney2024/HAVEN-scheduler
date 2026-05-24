@@ -7,8 +7,6 @@ import { StatsBar } from "./schedule/StatsBar";
 import { ViewToggle, type ViewMode } from "./schedule/ViewToggle";
 import { SaturdayView } from "./schedule/SaturdayView";
 import { GridView } from "./schedule/GridView";
-import { SubmittedView } from "./SubmittedView";
-import { SubmitModal } from "./schedule/SubmitModal";
 import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
 import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
@@ -24,9 +22,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   );
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [savingDraft, setSavingDraft] = useState(false);
-  const [submitOpen, setSubmitOpen] = useState(false);
-  const [submitLoading, setSubmitLoading] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
 
@@ -56,7 +51,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const persist = useDebouncedSaver(async (assignment: Assignment, deptId: string) => {
     setSaving(true);
     try {
-      const res = await api.assign({
+      await api.assign({
         callerNetid: identity.person.netid,
         callerEmail: identity.person.email,
         departmentId: deptId,
@@ -66,20 +61,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         shadowIds: assignment.shadowIds,
       });
       setLastSavedAt(new Date());
-      if (res.statusReverted) {
-        // Server demoted the dept back to Draft because we edited a submitted
-        // schedule. Sync local state so the UI shows Draft + the Submit button
-        // reappears, and warn the director loudly so they remember to resubmit.
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                department: { ...prev.department, scheduleStatus: "Draft", submittedAt: null },
-              }
-            : prev,
-        );
-        toast.warning("Schedule moved back to Draft — resubmit when ready so volunteers see your changes.");
-      }
     } catch (e) {
       toast.error((e as Error).message || "Save failed");
       reload(); // revert by reloading server truth
@@ -235,42 +216,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     return <div className="bg-white rounded-xl p-8 shadow-lg text-slate-500">Loading…</div>;
   }
 
-  const submitted = data.department.scheduleStatus === "Submitted";
-
-  const totalShifts = data.assignments.reduce(
-    (sum, a) => sum + a.directorIds.length + a.volunteerIds.length,
-    0,
-  );
-  const emptyDays = data.assignments.filter(
-    (a) => a.directorIds.length === 0 && a.volunteerIds.length === 0,
-  ).length;
-
-  async function handleSubmit() {
-    setSubmitLoading(true);
-    try {
-      await api.submit(data!.department.id, identity.person.netid, identity.person.email);
-      toast.success("Schedule submitted.");
-      setSubmitOpen(false);
-      reload();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setSubmitLoading(false);
-    }
-  }
-
-  async function handleSaveDraft() {
-    setSavingDraft(true);
-    try {
-      await persist.flush();
-      toast.success("Draft saved — you can come back any time.");
-    } catch (e) {
-      toast.error((e as Error).message || "Couldn't save draft.");
-    } finally {
-      setSavingDraft(false);
-    }
-  }
-
   async function handleConfirmRemove(reason: string) {
     if (!data || !removeTarget) return;
     setRemoveLoading(true);
@@ -287,9 +232,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           ? ` and unscheduled from ${res.unscheduledCount} Saturday${res.unscheduledCount === 1 ? "" : "s"}`
           : "";
       toast.success(`${removeTarget.name || removeTarget.netid} removed from ${data.department.name}${note}.`);
-      if (res.statusReverted) {
-        toast.warning("Schedule moved back to Draft — resubmit when ready so volunteers see your changes.");
-      }
       setRemoveTarget(null);
       reload();
     } catch (e) {
@@ -322,20 +264,13 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
             selectedId={selectedDeptId}
             onSelect={setSelectedDeptId}
           />
-          <span
-            className={`text-xs px-2 py-1 rounded-full ${
-              submitted ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-            }`}
-          >
-            {data.department.scheduleStatus}
-          </span>
           {saving ? (
             <span className="text-xs text-slate-500 flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
               Saving…
             </span>
           ) : lastSavedAt ? (
-            <span className="text-xs text-emerald-700 flex items-center gap-1" title="Your edits are saved as a draft.">
+            <span className="text-xs text-emerald-700 flex items-center gap-1" title="Edits save automatically.">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
               Saved {formatSavedAt(lastSavedAt)}
             </span>
@@ -402,10 +337,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         <StatsBar assignments={data.assignments} doubleBookedCount={doubleBookedCount} />
       )}
 
-      {editMode !== "requests" && submitted && (
-        <SubmittedView deptName={data.department.name} submittedAt={data.department.submittedAt} />
-      )}
-
       {editMode === "requests" ? (
         <PendingRequestsTab
           deptId={selectedDeptId}
@@ -446,32 +377,6 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         />
       )}
 
-      {editMode !== "requests" && !submitted && data.callerIsDeptDirector && (
-        <div className="flex justify-end items-center gap-2 pt-4 border-t border-slate-200">
-          <button
-            onClick={handleSaveDraft}
-            disabled={savingDraft || saving}
-            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
-            {savingDraft ? "Saving…" : "Save draft"}
-          </button>
-          <button
-            onClick={() => setSubmitOpen(true)}
-            className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75]"
-          >
-            Submit term schedule
-          </button>
-        </div>
-      )}
-      <SubmitModal
-        open={submitOpen}
-        deptName={data.department.name}
-        totalShifts={totalShifts}
-        emptyDays={emptyDays}
-        loading={submitLoading}
-        onCancel={() => setSubmitOpen(false)}
-        onConfirm={handleSubmit}
-      />
       <RemoveVolunteerModal
         open={!!removeTarget}
         personName={removeTarget ? removeTarget.name || removeTarget.netid : ""}

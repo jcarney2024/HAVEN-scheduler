@@ -5,8 +5,6 @@ describe("shapePublicSchedule", () => {
   const dept = {
     id: "dep1",
     name: "SCTS",
-    scheduleStatus: "Submitted" as const,
-    submittedAt: "2026-05-19T15:00:00.000Z",
   };
   const people = new Map([
     ["p1", { id: "p1", name: "Alice Director" }],
@@ -18,12 +16,11 @@ describe("shapePublicSchedule", () => {
     { date: "2026-06-06", directorIds: ["p1"], volunteerIds: [] },
   ];
 
-  it("returns dept name, submittedAt, and dates with only names per role", () => {
+  it("returns dept name and dates with only names per role", () => {
     const out = shapePublicSchedule({ dept, peopleById: people, scheduleRows });
 
     expect(out).toEqual({
       deptName: "SCTS",
-      submittedAt: "2026-05-19T15:00:00.000Z",
       dates: [
         {
           date: "2026-05-30",

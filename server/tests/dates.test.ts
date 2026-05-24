@@ -29,6 +29,17 @@ describe("normalizeVolunteerDate", () => {
   it("maps 'September 26th' to ISO", () => {
     expect(normalizeVolunteerDate("September 26th")).toBe("2026-09-26");
   });
+  // Regression: "august" ends in "st", so a naive ordinal-strip regex
+  // turns "august 1st" into "augu 1" and parsing fails. Cover every August
+  // Saturday so this can't slip back in.
+  it.each(["August 1st", "August 8th", "August 15th", "August 22nd", "August 29th"])(
+    "round-trips %s",
+    (display) => {
+      const iso = normalizeVolunteerDate(display);
+      expect(iso).not.toBeNull();
+      expect(displayDate(iso as string)).toBe(display);
+    },
+  );
   it("returns null for unknown input", () => {
     expect(normalizeVolunteerDate("Easter")).toBeNull();
   });

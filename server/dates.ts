@@ -35,7 +35,10 @@ const MONTHS: Record<string, number> = {
 };
 
 function parseFlexibleDateString(input: string): string | null {
-  const cleaned = input.trim().toLowerCase().replace(/(st|nd|rd|th)\b/g, "");
+  // Lookbehind: only strip the ordinal when it actually follows a digit.
+  // Without it, the "st" at the end of "august" gets stripped too, turning
+  // "august 1st" into "augu 1" and breaking every August date.
+  const cleaned = input.trim().toLowerCase().replace(/(?<=\d)(st|nd|rd|th)\b/g, "");
   const match = cleaned.match(/^([a-z]+)\s+(\d{1,2})$/);
   if (!match) return null;
   const month = MONTHS[match[1]];

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { createRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable.js";
+import { createRecord, deleteRecord, escapeFormulaString, listAll, patchRecord, type AirtableRecord } from "./airtable.js";
 import { CANONICAL_DATES, normalizeVolunteerDate, normalizeDirectorDate, displayDate } from "./dates.js";
 import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
 import { validateRequest, planApply, executeApply } from "./requests.js";
@@ -683,15 +683,22 @@ app.post("/assignment", async (c) => {
     return c.json({ error: "Caller not authorized for this department" }, 403);
   }
 
-  // find existing row for (dept, date)
+  // find existing row(s) for (dept, date). Self-healing: if a previous bug
+  // (e.g. the August date-parsing regression) ever spawned duplicates, we
+  // collapse them here — write to the most-recently-touched row and delete
+  // the rest. Single-match and zero-match paths behave as before.
   const all = await listAll<ScheduleRowFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ScheduleTableId,
   });
-  const existing = all.find((row) => {
-    if (!toIdList(row.fields.Department).includes(departmentId)) return false;
-    return normalizeVolunteerDate(selectName(row.fields.Date)) === date;
-  });
+  const matches = all
+    .filter((row) => {
+      if (!toIdList(row.fields.Department).includes(departmentId)) return false;
+      return normalizeVolunteerDate(selectName(row.fields.Date)) === date;
+    })
+    .sort((a, b) => b.createdTime.localeCompare(a.createdTime));
+  const existing = matches[0];
+  const duplicates = matches.slice(1);
 
   const dateName = displayDate(date);
   const deptName = dept.fields["Department Name"] ?? "";
@@ -722,6 +729,20 @@ app.post("/assignment", async (c) => {
       tableId: config.su26ScheduleTableId,
       fields,
     });
+  }
+
+  // Best-effort dedupe — errors here don't fail the user write, but log so
+  // we notice if something's stuck.
+  for (const dup of duplicates) {
+    try {
+      await deleteRecord({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26ScheduleTableId,
+        recordId: dup.id,
+      });
+    } catch (err) {
+      console.error("[assignment] dedupe delete failed for", dup.id, err);
+    }
   }
 
   return c.json({ success: true });

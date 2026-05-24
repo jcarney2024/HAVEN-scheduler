@@ -86,6 +86,16 @@ export async function patchRecord<F = Record<string, unknown>>(opts: {
   return (await res.json()) as AirtableRecord<F>;
 }
 
+export async function deleteRecord(opts: {
+  baseId: string;
+  tableId: string;
+  recordId: string;
+}): Promise<void> {
+  const url = `${BASE}/${opts.baseId}/${encodeURIComponent(opts.tableId)}/${opts.recordId}`;
+  const res = await fetchWithRetry(url, { method: "DELETE", headers: headers() });
+  if (!res.ok) throw new Error(`Airtable delete failed: ${res.status} ${await res.text()}`);
+}
+
 export function escapeFormulaString(s: string): string {
   return s.replace(/'/g, "\\'");
 }

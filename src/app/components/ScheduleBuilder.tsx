@@ -22,6 +22,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   );
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
 
@@ -216,6 +217,37 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     return <div className="bg-white rounded-xl p-8 shadow-lg text-slate-500">Loading…</div>;
   }
 
+  async function handleSubmit() {
+    if (!data) return;
+    setSubmitting(true);
+    try {
+      const res = await api.submit(
+        data.department.id,
+        identity.person.netid,
+        identity.person.email,
+      );
+      // Merge the fresh stamp into local state so the "Last submitted" line
+      // updates without a full refetch.
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              department: {
+                ...prev.department,
+                submittedAt: res.submittedAt,
+                submittedByName: res.submittedByName || prev.department.submittedByName,
+              },
+            }
+          : prev,
+      );
+      toast.success("Schedule submitted.");
+    } catch (e) {
+      toast.error((e as Error).message || "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleConfirmRemove(reason: string) {
     if (!data || !removeTarget) return;
     setRemoveLoading(true);
@@ -377,6 +409,30 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         />
       )}
 
+      {editMode !== "requests" && data.callerIsDeptDirector && (
+        <div className="flex flex-wrap justify-between items-center gap-2 pt-4 border-t border-slate-200">
+          <p className="text-xs text-slate-500">
+            {data.department.submittedAt
+              ? `Last submitted ${new Date(data.department.submittedAt).toLocaleString([], {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}${data.department.submittedByName ? ` by ${data.department.submittedByName}` : ""}.`
+              : "Not yet submitted — your edits autosave either way."}
+          </p>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-4 py-2 bg-[#0F4D92] text-white rounded-md font-medium hover:bg-[#0B3D75] disabled:opacity-50"
+          >
+            {submitting
+              ? "Submitting…"
+              : data.department.submittedAt
+              ? "Submit again"
+              : "Submit schedule"}
+          </button>
+        </div>
+      )}
       <RemoveVolunteerModal
         open={!!removeTarget}
         personName={removeTarget ? removeTarget.name || removeTarget.netid : ""}

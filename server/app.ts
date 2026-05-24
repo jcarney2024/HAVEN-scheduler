@@ -30,6 +30,8 @@ type Su26RosterFields = {
   "Department Name"?: string;
   Directors?: unknown;
   Volunteers?: unknown;
+  "Submitted At"?: string;
+  "Submitted By"?: unknown;
 };
 
 type DirectorAppFields = {
@@ -605,11 +607,36 @@ app.post(`/schedule/:deptId`, async (c) => {
     });
   }
 
+  // Resolve the most recent submitter's display name so the UI can show
+  // "Last submitted by X". The link is in the roster row; the name lives
+  // back on All People. We already have peopleById from the dirs+vols query
+  // but the submitter may be neither — fetch on demand if needed.
+  let submittedByName: string | null = null;
+  const submittedByIds = toIdList(dept.fields["Submitted By"]);
+  if (submittedByIds[0]) {
+    const submitterId = submittedByIds[0];
+    const cached = peopleById.get(submitterId);
+    if (cached?.fields.Name) {
+      submittedByName = cached.fields.Name;
+    } else {
+      const fetched = await listAll<AllPeopleFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.allPeopleTableId,
+        filterByFormula: `RECORD_ID() = '${escapeFormulaString(submitterId)}'`,
+        fields: ["Name"],
+        pageSize: 1,
+      });
+      submittedByName = fetched[0]?.fields.Name ?? null;
+    }
+  }
+
   return c.json({
     callerIsDeptDirector,
     department: {
       id: dept.id,
       name: dept.fields["Department Name"] ?? "",
+      submittedAt: dept.fields["Submitted At"] ?? null,
+      submittedByName,
     },
     dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
     roster: {
@@ -698,6 +725,56 @@ app.post("/assignment", async (c) => {
   }
 
   return c.json({ success: true });
+});
+
+/**
+ * Marks a department's schedule as "submitted" by writing Submitted At +
+ * Submitted By to the roster row. No lock — edits keep working, the public
+ * viewer keeps showing the schedule, and a director can re-submit any number
+ * of times to update the timestamp. This is purely a tracking signal.
+ */
+app.post("/submit/:deptId", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const deptId = c.req.param("deptId");
+  const { callerNetid, callerEmail } = (await c.req.json()) as {
+    callerNetid?: string;
+    callerEmail?: string;
+  };
+  if (!deptId || !callerNetid || !callerEmail) {
+    return c.json({ error: "Missing field" }, 400);
+  }
+
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const roster = await listAll<Su26RosterFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+  });
+  const dept = roster.find((r) => r.id === deptId);
+  if (!dept) return c.json({ error: "Department not found" }, 404);
+  if (!manageableDeptIdsFor(roster, caller.id).has(deptId)) {
+    return c.json({ error: "Not authorized for this department" }, 403);
+  }
+
+  const submittedAt = new Date().toISOString();
+  await patchRecord({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26RosterTableId,
+    recordId: dept.id,
+    fields: {
+      "Schedule Status": "Submitted",
+      "Submitted At": submittedAt,
+      "Submitted By": [caller.id],
+    },
+  });
+
+  return c.json({
+    success: true,
+    submittedAt,
+    submittedByName: caller.fields.Name ?? "",
+  });
 });
 
 app.post("/availability", async (c) => {

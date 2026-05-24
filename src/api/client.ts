@@ -51,6 +51,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  submit: (deptId: string, callerNetid: string, callerEmail: string) =>
+    request<{ success: true; submittedAt: string; submittedByName: string }>(
+      `/submit/${encodeURIComponent(deptId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ callerNetid, callerEmail }),
+      },
+    ),
   setAvailability: (input: {
     callerNetid: string;
     callerEmail: string;

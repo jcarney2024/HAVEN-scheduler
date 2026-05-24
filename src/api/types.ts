@@ -34,7 +34,14 @@ export type Assignment = {
 
 export type ScheduleResponse = {
   callerIsDeptDirector: boolean;
-  department: { id: string; name: string };
+  department: {
+    id: string;
+    name: string;
+    /** Most recent /submit timestamp; null if never submitted. Informational
+     *  only — the schedule is always editable and always public. */
+    submittedAt: string | null;
+    submittedByName: string | null;
+  };
   dates: { iso: string; display: string }[];
   roster: { directors: Person[]; volunteers: Person[] };
   assignments: Assignment[];

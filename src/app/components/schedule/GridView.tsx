@@ -8,7 +8,7 @@ type Props = {
   volunteers: Person[];
   assignments: Assignment[];
   disabled: boolean;
-  editMode: "assign" | "availability";
+  editMode: "assign" | "shadow" | "availability";
   onToggle: (date: string, kind: "director" | "volunteer", personId: string) => void;
   onRemoveVolunteer?: (person: Person) => void;
   onAcknowledgeVolunteerUpdate?: (person: Person) => void;
@@ -44,16 +44,23 @@ export function GridView({
   );
 
   // Per-volunteer count of in-department shifts assigned. Updates live.
+  // Includes shadow shifts so the pill matches SaturdayView.
   const volunteerAssignedCount = useMemo(() => {
     const counts = new Map<string, number>();
     for (const a of assignments) {
       for (const id of a.volunteerIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+      for (const id of a.shadowIds) counts.set(id, (counts.get(id) ?? 0) + 1);
     }
     return counts;
   }, [assignments]);
 
   function cell(person: Person, kind: "director" | "volunteer", iso: string) {
     const available = person.available.includes(iso);
+    const a = byDate[iso];
+    const regularIds = kind === "director" ? a?.directorIds ?? [] : a?.volunteerIds ?? [];
+    const shadowIds = a?.shadowIds ?? [];
+    const isShadow = kind === "volunteer" && shadowIds.includes(person.id);
+    const isRegular = regularIds.includes(person.id);
 
     if (editMode === "availability") {
       const sym = available ? "●" : "○";
@@ -70,15 +77,50 @@ export function GridView({
       );
     }
 
-    const a = byDate[iso];
-    const assignedIds = kind === "director" ? a?.directorIds ?? [] : a?.volunteerIds ?? [];
-    const assigned = assignedIds.includes(person.id);
+    if (editMode === "shadow") {
+      // Directors don't shadow — render an inert dash in their rows.
+      if (kind === "director") {
+        return (
+          <div className="w-9 h-9 flex items-center justify-center text-sm text-slate-300" aria-hidden>
+            —
+          </div>
+        );
+      }
+      const sym = isShadow ? "◐" : available ? "○" : "—";
+      const color = isShadow
+        ? "text-purple-600"
+        : available
+        ? "text-slate-700"
+        : "text-slate-300";
+      return (
+        <button
+          disabled={disabled}
+          onClick={() => onToggle(iso, kind, person.id)}
+          className={`w-9 h-9 flex items-center justify-center text-sm rounded hover:bg-purple-50 disabled:cursor-not-allowed ${color}`}
+          title={
+            isShadow
+              ? "Shadowing — click to remove"
+              : available
+              ? "Click to mark as shadow"
+              : "Not available, but click to mark as shadow anyway"
+          }
+        >
+          {sym}
+        </button>
+      );
+    }
+
+    // assign mode — shadows render as ◐ alongside regular ● so the director
+    // can spot them without flipping modes. Clicking still toggles the regular
+    // assignment (use Shadow mode to flip shadow status).
     const sameDayConflict = person.conflicts.sameDay.some((c) => c.date === iso);
-    const sym = assigned ? "●" : available ? "○" : "—";
+    const sym = isRegular ? "●" : isShadow ? "◐" : available ? "○" : "—";
     const color = sameDayConflict
       ? "text-red-600"
-      : assigned
+      : isRegular
       ? "text-emerald-600"
+      : isShadow
+      ? "text-purple-600"
       : available
       ? "text-slate-700"
       : "text-slate-300";
@@ -91,8 +133,10 @@ export function GridView({
         title={
           sameDayConflict
             ? "Same-day conflict in another dept"
-            : assigned
+            : isRegular
             ? "Assigned"
+            : isShadow
+            ? "Shadowing — use Shadow mode to edit"
             : available
             ? "Available"
             : "Not available"
@@ -230,9 +274,15 @@ export function GridView({
             available &nbsp; — click any cell to toggle the person's availability
             for that Saturday.
           </>
+        ) : editMode === "shadow" ? (
+          <>
+            <span className="text-purple-600">◐</span> shadowing &nbsp; ○ available &nbsp; — not available &nbsp;
+            — click a volunteer cell to toggle shadow status.
+          </>
         ) : (
           <>
-            ● assigned &nbsp; ○ available &nbsp; — not available &nbsp;{" "}
+            <span className="text-emerald-600">●</span> assigned &nbsp;{" "}
+            <span className="text-purple-600">◐</span> shadowing &nbsp; ○ available &nbsp; — not available &nbsp;{" "}
             <span className="text-red-600">●/○ in red</span> = same-day conflict
             in another dept
           </>

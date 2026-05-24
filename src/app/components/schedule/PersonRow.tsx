@@ -20,6 +20,7 @@ export function PersonRow({
   editMode = "assign",
   readOnly = false,
   assignedCount,
+  isShadow = false,
   onToggle,
   onRemove,
   onAcknowledgeUpdate,
@@ -33,6 +34,9 @@ export function PersonRow({
   /** Count of in-department shifts this volunteer is already assigned to. When
    *  provided alongside person.minShiftsWanted, the row shows an "X / N" pill. */
   assignedCount?: number;
+  /** True if this volunteer is currently a shadow on the active Saturday. Used
+   *  in assign mode to show a "shadow" badge so directors can tell at a glance. */
+  isShadow?: boolean;
   onToggle: () => void;
   /** If provided, shows a small ✕ button. Used to drop a volunteer from a dept. */
   onRemove?: () => void;
@@ -67,6 +71,14 @@ export function PersonRow({
         />
       )}
       <span className="flex-1">{person.name || person.netid}</span>
+      {isShadow && (
+        <span
+          className="text-[10px] uppercase tracking-wide text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded font-semibold"
+          title="Shadowing this shift"
+        >
+          shadow
+        </span>
+      )}
       {!readOnly &&
         editMode === "assign" &&
         person.minShiftsWanted != null &&

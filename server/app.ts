@@ -62,6 +62,10 @@ type ScheduleRowFields = {
   Date?: unknown;
   "Directors on Shift"?: unknown;
   "Volunteers on Shift"?: unknown;
+  // Optional. Volunteers attending in a shadowing/observation role. Tracked
+  // separately from "Volunteers on Shift" so departments that don't use it
+  // can ignore it. Counts toward each volunteer's "X / N" shift-target pill.
+  "Shadow Volunteers on Shift"?: unknown;
 };
 
 type ShiftRequestFields = {
@@ -152,9 +156,10 @@ app.get("/view/:deptId", async (c) => {
         date: iso,
         directorIds: toIdList(row.fields["Directors on Shift"]),
         volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
+        shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
       };
     })
-    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[]; shadowIds: string[] } => r !== null);
 
   const shaped = shapePublicSchedule({
     dept: {
@@ -548,6 +553,7 @@ app.post(`/schedule/:deptId`, async (c) => {
         departmentName: deptNameById.get(deptRefId) ?? "",
         directorIds: toIdList(row.fields["Directors on Shift"]),
         volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
+        shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
       };
     })
     .filter((x): x is ScheduleEntry => !!x);
@@ -596,7 +602,10 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const scheduleStatus = selectName(dept.fields["Schedule Status"]) || "Draft";
 
-  const assignmentsByDate = new Map<string, { directorIds: string[]; volunteerIds: string[] }>();
+  const assignmentsByDate = new Map<
+    string,
+    { directorIds: string[]; volunteerIds: string[]; shadowIds: string[] }
+  >();
   for (const row of allSchedule) {
     if (!toIdList(row.fields.Department).includes(deptId)) continue;
     const dateName = selectName(row.fields.Date);
@@ -605,6 +614,7 @@ app.post(`/schedule/:deptId`, async (c) => {
     assignmentsByDate.set(iso, {
       directorIds: toIdList(row.fields["Directors on Shift"]),
       volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
+      shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
     });
   }
 
@@ -625,6 +635,7 @@ app.post(`/schedule/:deptId`, async (c) => {
       date: iso,
       directorIds: assignmentsByDate.get(iso)?.directorIds ?? [],
       volunteerIds: assignmentsByDate.get(iso)?.volunteerIds ?? [],
+      shadowIds: assignmentsByDate.get(iso)?.shadowIds ?? [],
     })),
   });
 });
@@ -639,6 +650,7 @@ app.post("/assignment", async (c) => {
     date?: string; // ISO
     directorIds?: string[];
     volunteerIds?: string[];
+    shadowIds?: string[];
   };
   const { callerNetid, callerEmail, departmentId, date } = body;
   if (!callerNetid || !callerEmail || !departmentId || !date) {
@@ -677,13 +689,18 @@ app.post("/assignment", async (c) => {
   const dateName = displayDate(date);
   const deptName = dept.fields["Department Name"] ?? "";
 
-  const fields = {
+  // Only include the shadow field on writes when the client passes it. Lets
+  // older clients (and unrelated callers) leave shadow assignments alone.
+  const fields: Record<string, unknown> = {
     Name: `${deptName} — ${dateName}`,
     Department: [departmentId],
     Date: dateName,
     "Directors on Shift": body.directorIds ?? [],
     "Volunteers on Shift": body.volunteerIds ?? [],
   };
+  if (Array.isArray(body.shadowIds)) {
+    fields["Shadow Volunteers on Shift"] = body.shadowIds;
+  }
 
   if (existing) {
     await patchRecord({
@@ -947,28 +964,35 @@ app.post("/remove-volunteer", async (c) => {
   });
 
   // 2. Strip them from every SU 26 Schedule row for this dept where they're
-  // listed as a Volunteer on Shift.
+  // listed as a Volunteer on Shift or a Shadow Volunteer on Shift.
   const schedule = await listAll<ScheduleRowFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ScheduleTableId,
   });
   const affected = schedule.filter((row) => {
     if (!toIdList(row.fields.Department).includes(departmentId)) return false;
-    return toIdList(row.fields["Volunteers on Shift"]).includes(personId);
+    const vols = toIdList(row.fields["Volunteers on Shift"]);
+    const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
+    return vols.includes(personId) || shadows.includes(personId);
   });
   await Promise.all(
-    affected.map((row) =>
-      patchRecord({
+    affected.map((row) => {
+      const vols = toIdList(row.fields["Volunteers on Shift"]);
+      const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
+      const patch: Record<string, unknown> = {};
+      if (vols.includes(personId)) {
+        patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
+      }
+      if (shadows.includes(personId)) {
+        patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
+      }
+      return patchRecord({
         baseId: config.haveNManagementBaseId,
         tableId: config.su26ScheduleTableId,
         recordId: row.id,
-        fields: {
-          "Volunteers on Shift": toIdList(row.fields["Volunteers on Shift"]).filter(
-            (id) => id !== personId,
-          ),
-        },
-      }),
-    ),
+        fields: patch,
+      });
+    }),
   );
 
   // 3. Audit log — don't fail the user request if this errors, but make it
@@ -1109,6 +1133,7 @@ app.post("/me/assignments", async (c) => {
     deptName: string;
     date: string;
     role: "director" | "volunteer";
+    shadow: boolean;
     pendingRequestId: string | null;
   }> = [];
 
@@ -1120,15 +1145,22 @@ app.post("/me/assignments", async (c) => {
     if (!iso) continue;
     const directorIds = toIdList(row.fields["Directors on Shift"]);
     const volunteerIds = toIdList(row.fields["Volunteers on Shift"]);
-    const role: "director" | "volunteer" | null =
-      directorIds.includes(person.id) ? "director" :
-      volunteerIds.includes(person.id) ? "volunteer" : null;
+    const shadowIds = toIdList(row.fields["Shadow Volunteers on Shift"]);
+    let role: "director" | "volunteer" | null = null;
+    let shadow = false;
+    if (directorIds.includes(person.id)) role = "director";
+    else if (volunteerIds.includes(person.id)) role = "volunteer";
+    else if (shadowIds.includes(person.id)) {
+      role = "volunteer";
+      shadow = true;
+    }
     if (!role) continue;
     assignments.push({
       deptId: dept.id,
       deptName: dept.name,
       date: iso,
       role,
+      shadow,
       pendingRequestId: pendingByKey.get(`${dept.id}|${iso}`) ?? null,
     });
   }

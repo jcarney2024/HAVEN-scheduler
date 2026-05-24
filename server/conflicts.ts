@@ -4,6 +4,9 @@ export type ScheduleEntry = {
   departmentName: string;
   directorIds: string[];
   volunteerIds: string[];
+  /** Optional. Shadowing volunteers — still counted for same-day conflict
+   *  detection because a shadow can only be in one place. */
+  shadowIds?: string[];
 };
 
 export type Conflicts = {
@@ -18,7 +21,9 @@ export function computeConflicts(opts: {
 }): Conflicts {
   const { personId, thisDepartmentId, allSchedule } = opts;
   const isPresent = (e: ScheduleEntry) =>
-    e.directorIds.includes(personId) || e.volunteerIds.includes(personId);
+    e.directorIds.includes(personId) ||
+    e.volunteerIds.includes(personId) ||
+    (e.shadowIds?.includes(personId) ?? false);
 
   // Dates on which the person is assigned in the caller's department.
   const thisDeptDates = new Set<string>();

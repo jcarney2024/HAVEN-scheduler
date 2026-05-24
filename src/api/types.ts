@@ -29,6 +29,9 @@ export type Assignment = {
   date: string; // ISO
   directorIds: string[];
   volunteerIds: string[];
+  /** Volunteers attending this Saturday in a shadow/observation role.
+   *  Distinct from volunteerIds so we can render them differently. */
+  shadowIds: string[];
 };
 
 export type ScheduleResponse = {
@@ -57,7 +60,7 @@ export type PublicSchedule = {
   dates: Array<{
     date: string; // ISO Saturday key
     directors: Array<{ name: string }>;
-    volunteers: Array<{ name: string }>;
+    volunteers: Array<{ name: string; shadow?: boolean }>;
   }>;
 };
 
@@ -66,6 +69,8 @@ export type MyAssignment = {
   deptName: string;
   date: string; // ISO
   role: "director" | "volunteer";
+  /** True if this assignment is in the "Shadow Volunteers on Shift" list rather than the regular Volunteers list. */
+  shadow?: boolean;
   pendingRequestId: string | null;
 };
 

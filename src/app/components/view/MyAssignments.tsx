@@ -51,6 +51,11 @@ export function MyAssignments({
             <div>
               <div className="font-medium">
                 {displayDate(a.date)} — {a.deptName}
+                {a.shadow && (
+                  <span className="ml-2 text-[10px] uppercase tracking-wide text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded font-semibold align-middle">
+                    shadow
+                  </span>
+                )}
               </div>
               <div className="text-xs text-slate-500 uppercase tracking-wide">
                 {a.role}

@@ -76,4 +76,23 @@ describe("shapePublicSchedule", () => {
     });
     expect(out.dates[0].volunteers).toEqual([]);
   });
+
+  it("appends shadow volunteers with shadow=true and leaves regulars unmarked", () => {
+    const out = shapePublicSchedule({
+      dept,
+      peopleById: people,
+      scheduleRows: [
+        {
+          date: "2026-05-30",
+          directorIds: ["p1"],
+          volunteerIds: ["p2"],
+          shadowIds: ["p3"],
+        },
+      ],
+    });
+    expect(out.dates[0].volunteers).toEqual([
+      { name: "Bob Volunteer" },
+      { name: "Cara Volunteer", shadow: true },
+    ]);
+  });
 });

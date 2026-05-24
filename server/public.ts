@@ -1,7 +1,12 @@
 export type PublicScheduleInput = {
   dept: { id: string; name: string; scheduleStatus: "Draft" | "Submitted"; submittedAt: string | null };
   peopleById: Map<string, { id: string; name: string }>;
-  scheduleRows: Array<{ date: string; directorIds: string[]; volunteerIds: string[] }>;
+  scheduleRows: Array<{
+    date: string;
+    directorIds: string[];
+    volunteerIds: string[];
+    shadowIds?: string[];
+  }>;
 };
 
 export type PublicSchedule = {
@@ -10,7 +15,8 @@ export type PublicSchedule = {
   dates: Array<{
     date: string;
     directors: Array<{ name: string }>;
-    volunteers: Array<{ name: string }>;
+    /** Volunteers in alphabetical-ish order; shadow flag means observation role. */
+    volunteers: Array<{ name: string; shadow?: boolean }>;
   }>;
 };
 
@@ -26,11 +32,22 @@ export function shapePublicSchedule(input: PublicScheduleInput): PublicSchedule 
 
   const dates = [...scheduleRows]
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map((row) => ({
-      date: row.date,
-      directors: row.directorIds.map(lookup).filter((x): x is { name: string } => x !== null),
-      volunteers: row.volunteerIds.map(lookup).filter((x): x is { name: string } => x !== null),
-    }));
+    .map((row) => {
+      const directors = row.directorIds.map(lookup).filter((x): x is { name: string } => x !== null);
+      const regulars = row.volunteerIds
+        .map(lookup)
+        .filter((x): x is { name: string } => x !== null)
+        .map((p) => ({ name: p.name }));
+      const shadows = (row.shadowIds ?? [])
+        .map(lookup)
+        .filter((x): x is { name: string } => x !== null)
+        .map((p) => ({ name: p.name, shadow: true as const }));
+      return {
+        date: row.date,
+        directors,
+        volunteers: [...regulars, ...shadows],
+      };
+    });
 
   return {
     deptName: dept.name,

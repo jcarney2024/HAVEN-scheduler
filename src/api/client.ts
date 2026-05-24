@@ -45,6 +45,7 @@ export const api = {
     date: string;
     directorIds: string[];
     volunteerIds: string[];
+    shadowIds: string[];
   }) =>
     request<{ success: true }>("/assignment", {
       method: "POST",

@@ -133,11 +133,14 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
           <SaturdayView
             dates={schedule.dates.map((d) => ({ iso: d.date, display: displayDate(d.date) }))}
             directors={schedule.dates.flatMap((d) => d.directors).map(toPseudoPerson("director"))}
-            volunteers={schedule.dates.flatMap((d) => d.volunteers).map(toPseudoPerson("volunteer"))}
+            volunteers={schedule.dates
+              .flatMap((d) => d.volunteers)
+              .map(toPseudoVolunteer)}
             assignments={schedule.dates.map((d) => ({
               date: d.date,
               directorIds: d.directors.map((p) => pseudoId("director", p.name)),
-              volunteerIds: d.volunteers.map((p) => pseudoId("volunteer", p.name)),
+              volunteerIds: d.volunteers.map((p) => pseudoVolunteerId(p)),
+              shadowIds: [],
             }))}
             disabled
             editMode="assign"
@@ -182,4 +185,22 @@ function toPseudoPerson(kind: "director" | "volunteer") {
     available: [],
     conflicts: { sameDay: [], crossTerm: [] },
   });
+}
+
+// Volunteers may be shadows; suffix the displayed name so it's obvious. The
+// pseudo-ID has to differ from the regular variant to avoid collisions on
+// Saturdays where someone appears as a regular in one dept and shadow in
+// another, even though that's an unusual case for the read-only view.
+function pseudoVolunteerId(p: { name: string; shadow?: boolean }): string {
+  return p.shadow ? `volunteer-shadow:${p.name}` : pseudoId("volunteer", p.name);
+}
+
+function toPseudoVolunteer(p: { name: string; shadow?: boolean }) {
+  return {
+    id: pseudoVolunteerId(p),
+    netid: "",
+    name: p.shadow ? `${p.name} (shadow)` : p.name,
+    available: [],
+    conflicts: { sameDay: [], crossTerm: [] },
+  };
 }

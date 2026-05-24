@@ -19,7 +19,9 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
-  const [editMode, setEditMode] = useState<"assign" | "availability" | "requests">("assign");
+  const [editMode, setEditMode] = useState<"assign" | "shadow" | "availability" | "requests">(
+    "assign",
+  );
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -61,6 +63,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         date: assignment.date,
         directorIds: assignment.directorIds,
         volunteerIds: assignment.volunteerIds,
+        shadowIds: assignment.shadowIds,
       });
       setLastSavedAt(new Date());
     } catch (e) {
@@ -114,7 +117,15 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
       const list = kind === "director" ? a.directorIds : a.volunteerIds;
       const idx = list.indexOf(personId);
       if (idx >= 0) list.splice(idx, 1);
-      else list.push(personId);
+      else {
+        list.push(personId);
+        // Moving someone INTO regular assigned implicitly takes them out of
+        // shadow on the same Saturday. Otherwise they'd appear in both lists.
+        if (kind === "volunteer") {
+          const sIdx = a.shadowIds.indexOf(personId);
+          if (sIdx >= 0) a.shadowIds.splice(sIdx, 1);
+        }
+      }
       persist.schedule(`${date}`, { ...a }, next.department.id);
 
       // same-day conflict warning
@@ -128,6 +139,29 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           toast.message(`Heads up — ${person.name} didn't mark ${date} available.`);
         }
       }
+      return next;
+    });
+  }
+
+  function handleShadowToggle(date: string, kind: "director" | "volunteer", personId: string) {
+    if (!data) return;
+    if (kind !== "volunteer") return; // directors don't shadow
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const a = next.assignments.find((x) => x.date === date);
+      if (!a) return prev;
+      const sIdx = a.shadowIds.indexOf(personId);
+      if (sIdx >= 0) {
+        a.shadowIds.splice(sIdx, 1);
+      } else {
+        a.shadowIds.push(personId);
+        // Same exclusivity rule the other way — flipping to shadow removes
+        // them from regular Volunteers on Shift if they were there.
+        const vIdx = a.volunteerIds.indexOf(personId);
+        if (vIdx >= 0) a.volunteerIds.splice(vIdx, 1);
+      }
+      persist.schedule(`${date}`, { ...a }, next.department.id);
       return next;
     });
   }
@@ -152,7 +186,12 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
     });
   }
 
-  const handleToggle = editMode === "assign" ? handleAssignmentToggle : handleAvailabilityToggle;
+  const handleToggle =
+    editMode === "assign"
+      ? handleAssignmentToggle
+      : editMode === "shadow"
+      ? handleShadowToggle
+      : handleAvailabilityToggle;
 
   async function handleAcknowledgeVolunteerUpdate(person: Person) {
     if (!data) return;
@@ -287,7 +326,7 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex border border-slate-300 rounded-lg overflow-hidden">
-            {(["assign", "availability", "requests"] as const).map((m) => (
+            {(["assign", "shadow", "availability", "requests"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setEditMode(m)}
@@ -295,12 +334,16 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
                   editMode === m
                     ? m === "availability"
                       ? "bg-amber-500 text-white"
+                      : m === "shadow"
+                      ? "bg-purple-600 text-white"
                       : "bg-[#0F4D92] text-white"
                     : "bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {m === "assign" ? (
                   "Assign"
+                ) : m === "shadow" ? (
+                  "Shadow"
                 ) : m === "availability" ? (
                   <>
                     <span className="sm:hidden">Availability</span>
@@ -326,6 +369,15 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
           <strong>Availability edit mode.</strong>{" "}
           Checkboxes now toggle whether each person is <em>available</em> for the
           selected Saturday.
+        </div>
+      )}
+
+      {editMode === "shadow" && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
+          <strong>Shadow mode.</strong>{" "}
+          Checkboxes now toggle whether each volunteer is <em>shadowing</em> the
+          selected Saturday. A volunteer can be a regular or a shadow on any given
+          Saturday, but not both — flipping one clears the other.
         </div>
       )}
 

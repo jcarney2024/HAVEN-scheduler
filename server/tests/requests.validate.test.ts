@@ -99,4 +99,45 @@ describe("validateRequest", () => {
       }),
     ).toEqual({ ok: true });
   });
+
+  describe("shadow shifts", () => {
+    const shadowRows: ScheduleRowForValidation[] = [
+      { date: "2026-05-30", directorIds: ["dA"], volunteerIds: ["vA"], shadowIds: ["sA"] },
+      { date: "2026-06-06", directorIds: [], volunteerIds: ["vB"], shadowIds: ["sB"] },
+    ];
+
+    it("accepts a shadow drop (no target)", () => {
+      expect(
+        validateRequest({
+          scheduleRows: shadowRows,
+          requesterId: "sA",
+          requesterDate: "2026-05-30",
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it("rejects a shadow named-swap with a clear message", () => {
+      expect(
+        validateRequest({
+          scheduleRows: shadowRows,
+          requesterId: "sA",
+          requesterDate: "2026-05-30",
+          targetId: "sB",
+          targetDate: "2026-06-06",
+        }),
+      ).toEqual({ ok: false, error: "Shadow shifts can only be dropped, not swapped" });
+    });
+
+    it("rejects a regular volunteer trying to name a shadow as the swap target", () => {
+      expect(
+        validateRequest({
+          scheduleRows: shadowRows,
+          requesterId: "vA",
+          requesterDate: "2026-05-30",
+          targetId: "sB",
+          targetDate: "2026-06-06",
+        }),
+      ).toEqual({ ok: false, error: "Partner is not eligible" });
+    });
+  });
 });

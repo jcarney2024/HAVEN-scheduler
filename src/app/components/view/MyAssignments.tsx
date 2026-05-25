@@ -76,7 +76,7 @@ export function MyAssignments({
                 onClick={() => setOpenFor(a)}
                 className="text-sm bg-[#0F4D92] text-white rounded-md px-3 py-1.5 hover:bg-[#0B3D75]"
               >
-                Request swap
+                {a.shadow ? "Request drop" : "Request swap"}
               </button>
             )}
           </div>
@@ -87,6 +87,7 @@ export function MyAssignments({
         <RequestSwapModal
           assignment={openFor}
           credentials={credentials}
+          dropOnly={openFor.shadow ?? false}
           onClose={() => setOpenFor(null)}
           onSubmitted={() => {
             setOpenFor(null);

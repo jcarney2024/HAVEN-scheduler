@@ -11,11 +11,14 @@ export function RequestSwapModal({
   credentials,
   onClose,
   onSubmitted,
+  dropOnly = false,
 }: {
   assignment: MyAssignment;
   credentials: { netid: string; email: string };
   onClose: () => void;
   onSubmitted: () => void;
+  /** When true, hide the named-swap option (used for shadow shifts). */
+  dropOnly?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>("drop");
   const [schedule, setSchedule] = useState<PublicSchedule | null>(null);
@@ -81,27 +84,33 @@ export function RequestSwapModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
         <h2 className="text-lg font-semibold">
-          Request a swap — {displayDate(assignment.date)} · {assignment.deptName}
+          {dropOnly ? "Request to drop" : "Request a swap"} — {displayDate(assignment.date)} · {assignment.deptName}
         </h2>
 
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              checked={mode === "drop"}
-              onChange={() => setMode("drop")}
-            />
-            Just drop this shift
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              checked={mode === "named"}
-              onChange={() => setMode("named")}
-            />
-            Swap with a specific person
-          </label>
-        </div>
+        {dropOnly ? (
+          <p className="text-sm text-slate-600">
+            Shadow shifts can be dropped through the portal but can't be swapped — your director will be notified.
+          </p>
+        ) : (
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={mode === "drop"}
+                onChange={() => setMode("drop")}
+              />
+              Just drop this shift
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={mode === "named"}
+                onChange={() => setMode("named")}
+              />
+              Swap with a specific person
+            </label>
+          </div>
+        )}
 
         {mode === "named" && (
           <>

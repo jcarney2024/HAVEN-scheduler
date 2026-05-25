@@ -1270,9 +1270,10 @@ app.post("/requests", async (c) => {
         date: iso,
         directorIds: toIdList(r.fields["Directors on Shift"]),
         volunteerIds: toIdList(r.fields["Volunteers on Shift"]),
+        shadowIds: toIdList(r.fields["Shadow Volunteers on Shift"]),
       };
     })
-    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[]; shadowIds: string[] } => r !== null);
 
   // Resolve targetNetid (if provided) to a person id. The frontend modal in the next task
   // may send a name in this field instead of a NetID (because the public viewer redacts
@@ -1337,6 +1338,37 @@ app.post("/requests", async (c) => {
     tableId: config.su26ShiftRequestsTableId,
     fields,
   });
+
+  // Post-create race check: two concurrent submissions can both pass the
+  // pre-check above. Re-query and, if a competing pending row exists,
+  // withdraw the newer one (older createdTime wins, with record-id as the
+  // deterministic tiebreaker for same-timestamp creates).
+  const afterCreate = await listAll<ShiftRequestFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.su26ShiftRequestsTableId,
+    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+  });
+  const competing = afterCreate.filter(
+    (r) => r.id !== created.id && toIdList(r.fields.Requester).includes(person.id),
+  );
+  const lostRace = competing.some((r) => {
+    if (r.createdTime < created.createdTime) return true;
+    if (r.createdTime === created.createdTime && r.id < created.id) return true;
+    return false;
+  });
+  if (lostRace) {
+    try {
+      await patchRecord({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.su26ShiftRequestsTableId,
+        recordId: created.id,
+        fields: { Status: "Withdrawn", "Resolved At": new Date().toISOString() },
+      });
+    } catch (err) {
+      console.error("[requests] failed to withdraw losing race entry:", err);
+    }
+    return c.json({ error: "Pending request already exists" }, 409);
+  }
 
   return c.json({ id: created.id, status: "Pending" }, 201);
 });
@@ -1430,13 +1462,14 @@ app.post("/requests/for-dept/:deptId", async (c) => {
     tableId: config.su26ScheduleTableId,
     filterByFormula: `{Department} = '${escapeFormulaString(dept.fields["Department Name"] ?? "")}'`,
   }) : [];
-  const scheduleByDate = new Map<string, { directors: string[]; volunteers: string[] }>();
+  const scheduleByDate = new Map<string, { directors: string[]; volunteers: string[]; shadows: string[] }>();
   for (const row of scheduleRows) {
     const iso = normalizeVolunteerDate(selectName(row.fields.Date));
     if (!iso) continue;
     scheduleByDate.set(iso, {
       directors: toIdList(row.fields["Directors on Shift"]),
       volunteers: toIdList(row.fields["Volunteers on Shift"]),
+      shadows: toIdList(row.fields["Shadow Volunteers on Shift"]),
     });
   }
 
@@ -1579,9 +1612,10 @@ app.post("/requests/:id/resolve", async (c) => {
         date: iso,
         directorIds: toIdList(r.fields["Directors on Shift"]),
         volunteerIds: toIdList(r.fields["Volunteers on Shift"]),
+        shadowIds: toIdList(r.fields["Shadow Volunteers on Shift"]),
       };
     })
-    .filter((r): r is { id: string; date: string; directorIds: string[]; volunteerIds: string[] } => r !== null);
+    .filter((r): r is { id: string; date: string; directorIds: string[]; volunteerIds: string[]; shadowIds: string[] } => r !== null);
 
   const v = validateRequest({
     scheduleRows: rowsForApply,

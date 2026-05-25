@@ -4,6 +4,7 @@ export type ScheduleRowForValidation = {
   date: string; // ISO Saturday key
   directorIds: string[];
   volunteerIds: string[];
+  shadowIds?: string[];
 };
 
 export type ValidateInput = {
@@ -16,7 +17,7 @@ export type ValidateInput = {
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-type Role = "director" | "volunteer";
+type Role = "director" | "volunteer" | "shadow";
 
 function findRoleOnDate(
   rows: ScheduleRowForValidation[],
@@ -27,6 +28,7 @@ function findRoleOnDate(
   if (!row) return null;
   if (row.directorIds.includes(personId)) return "director";
   if (row.volunteerIds.includes(personId)) return "volunteer";
+  if (row.shadowIds?.includes(personId)) return "shadow";
   return null;
 }
 
@@ -45,6 +47,14 @@ export function validateRequest(input: ValidateInput): ValidationResult {
   const hasTargetId = !!targetId;
   const hasTargetDate = !!targetDate;
 
+  // Shadow shifts: drops only. Named swaps don't make sense because shadows
+  // are observers, not a regular slot to trade in or out of.
+  if (requesterRole === "shadow") {
+    if (hasTargetId || hasTargetDate)
+      return { ok: false, error: "Shadow shifts can only be dropped, not swapped" };
+    return { ok: true };
+  }
+
   if (!hasTargetId && !hasTargetDate) return { ok: true };
   if (hasTargetId !== hasTargetDate)
     return { ok: false, error: "Partner is not eligible" };
@@ -59,6 +69,8 @@ export function validateRequest(input: ValidateInput): ValidationResult {
   );
   if (!targetRole)
     return { ok: false, error: "Partner is not eligible" };
+  if (targetRole === "shadow")
+    return { ok: false, error: "Partner is not eligible" };
   if (targetRole !== requesterRole)
     return { ok: false, error: "Partner is not eligible" };
 
@@ -70,6 +82,7 @@ export type ScheduleRowForApply = {
   date: string;
   directorIds: string[];
   volunteerIds: string[];
+  shadowIds?: string[];
 };
 
 export type PatchOp = {
@@ -85,23 +98,33 @@ export type ApplyInput = {
   targetDate?: string;
 };
 
-function roleOf(row: ScheduleRowForApply, personId: string): "director" | "volunteer" | null {
+type ApplyRole = "director" | "volunteer" | "shadow";
+
+function roleOf(row: ScheduleRowForApply, personId: string): ApplyRole | null {
   if (row.directorIds.includes(personId)) return "director";
   if (row.volunteerIds.includes(personId)) return "volunteer";
+  if (row.shadowIds?.includes(personId)) return "shadow";
   return null;
 }
 
-function fieldForRole(role: "director" | "volunteer"): string {
-  return role === "director" ? "Directors on Shift" : "Volunteers on Shift";
+function fieldForRole(role: ApplyRole): string {
+  if (role === "director") return "Directors on Shift";
+  if (role === "volunteer") return "Volunteers on Shift";
+  return "Shadow Volunteers on Shift";
 }
 
-function withRemoved(row: ScheduleRowForApply, role: "director" | "volunteer", personId: string): string[] {
-  const list = role === "director" ? row.directorIds : row.volunteerIds;
-  return list.filter((id) => id !== personId);
+function listForRole(row: ScheduleRowForApply, role: ApplyRole): string[] {
+  if (role === "director") return row.directorIds;
+  if (role === "volunteer") return row.volunteerIds;
+  return row.shadowIds ?? [];
 }
 
-function withAdded(row: ScheduleRowForApply, role: "director" | "volunteer", personId: string): string[] {
-  const list = role === "director" ? row.directorIds : row.volunteerIds;
+function withRemoved(row: ScheduleRowForApply, role: ApplyRole, personId: string): string[] {
+  return listForRole(row, role).filter((id) => id !== personId);
+}
+
+function withAdded(row: ScheduleRowForApply, role: ApplyRole, personId: string): string[] {
+  const list = listForRole(row, role);
   return list.includes(personId) ? list : [...list, personId];
 }
 
@@ -124,14 +147,21 @@ export function planApply(input: ApplyInput): PatchOp[] {
     ];
   }
 
+  // Named swaps don't apply to shadow shifts — validate should have rejected this.
+  if (requesterRole === "shadow") {
+    throw new Error("Shadow shifts cannot be swapped");
+  }
+
   const targetRow = scheduleRows.find((r) => r.date === targetDate);
   if (!targetRow) throw new Error("Target's row not found");
+
+  const requesterListKey = requesterRole === "director" ? "directorIds" : "volunteerIds";
 
   const requesterPatch: PatchOp = {
     recordId: requesterRow.id,
     fields: {
       [fieldForRole(requesterRole)]: withAdded(
-        { ...requesterRow, [requesterRole === "director" ? "directorIds" : "volunteerIds"]:
+        { ...requesterRow, [requesterListKey]:
             withRemoved(requesterRow, requesterRole, requesterId) },
         requesterRole,
         targetId,
@@ -143,7 +173,7 @@ export function planApply(input: ApplyInput): PatchOp[] {
     recordId: targetRow.id,
     fields: {
       [fieldForRole(requesterRole)]: withAdded(
-        { ...targetRow, [requesterRole === "director" ? "directorIds" : "volunteerIds"]:
+        { ...targetRow, [requesterListKey]:
             withRemoved(targetRow, requesterRole, targetId) },
         requesterRole,
         requesterId,
@@ -176,6 +206,8 @@ function rollbackFieldsFor(
 ): Record<string, string[]> {
   if (changedField === "Directors on Shift") return { "Directors on Shift": row.directorIds };
   if (changedField === "Volunteers on Shift") return { "Volunteers on Shift": row.volunteerIds };
+  if (changedField === "Shadow Volunteers on Shift")
+    return { "Shadow Volunteers on Shift": row.shadowIds ?? [] };
   return {};
 }
 

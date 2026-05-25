@@ -75,6 +75,37 @@ describe("planApply", () => {
       }),
     ).toThrow(/not assigned/i);
   });
+
+  it("for a shadow drop, patches Shadow Volunteers on Shift", () => {
+    const rows: ScheduleRowForApply[] = [
+      { id: "r1", date: "2026-05-30", directorIds: [], volunteerIds: ["vA"], shadowIds: ["sA", "sB"] },
+    ];
+    expect(
+      planApply({
+        scheduleRows: rows,
+        requesterId: "sA",
+        requesterDate: "2026-05-30",
+      }),
+    ).toEqual([
+      { recordId: "r1", fields: { "Shadow Volunteers on Shift": ["sB"] } },
+    ]);
+  });
+
+  it("throws if a shadow named-swap somehow reaches planApply (validate should have caught it)", () => {
+    const rows: ScheduleRowForApply[] = [
+      { id: "r1", date: "2026-05-30", directorIds: [], volunteerIds: [], shadowIds: ["sA"] },
+      { id: "r2", date: "2026-06-06", directorIds: [], volunteerIds: [], shadowIds: ["sB"] },
+    ];
+    expect(() =>
+      planApply({
+        scheduleRows: rows,
+        requesterId: "sA",
+        requesterDate: "2026-05-30",
+        targetId: "sB",
+        targetDate: "2026-06-06",
+      }),
+    ).toThrow(/shadow/i);
+  });
 });
 
 describe("executeApply", () => {

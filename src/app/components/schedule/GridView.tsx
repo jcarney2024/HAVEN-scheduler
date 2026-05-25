@@ -54,6 +54,21 @@ export function GridView({
     return counts;
   }, [assignments]);
 
+  // Per-date roll-ups for the column-header counter ("3 +1" = 3 regular
+  // volunteers, 1 shadow). Directors are tracked separately for the
+  // director-row header.
+  const perDateCounts = useMemo(() => {
+    const out = new Map<string, { volunteers: number; shadows: number; directors: number }>();
+    for (const a of assignments) {
+      out.set(a.date, {
+        volunteers: a.volunteerIds.length,
+        shadows: a.shadowIds.length,
+        directors: a.directorIds.length,
+      });
+    }
+    return out;
+  }, [assignments]);
+
   function cell(person: Person, kind: "director" | "volunteer", iso: string) {
     const available = person.available.includes(iso);
     const a = byDate[iso];
@@ -230,6 +245,7 @@ export function GridView({
             <th className="sticky left-0 bg-white min-w-[160px]"></th>
             {dates.map((d) => {
               const { month, day } = splitDisplay(d.display);
+              const counts = perDateCounts.get(d.iso) ?? { volunteers: 0, shadows: 0, directors: 0 };
               return (
                 <th
                   key={d.iso}
@@ -238,6 +254,15 @@ export function GridView({
                   <div className="flex flex-col items-center leading-tight">
                     <span className="text-[10px] uppercase tracking-wide">{month}</span>
                     <span className="text-sm font-semibold text-slate-700">{day}</span>
+                    <span
+                      className="text-[10px] tabular-nums mt-0.5 font-normal"
+                      title={`${counts.directors} director${counts.directors === 1 ? "" : "s"}, ${counts.volunteers} volunteer${counts.volunteers === 1 ? "" : "s"}${counts.shadows ? `, ${counts.shadows} shadow${counts.shadows === 1 ? "" : "s"}` : ""}`}
+                    >
+                      <span className="text-slate-600">{counts.volunteers}</span>
+                      {counts.shadows > 0 && (
+                        <span className="text-purple-600"> +{counts.shadows}</span>
+                      )}
+                    </span>
                   </div>
                 </th>
               );

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
+import { api } from "@/api/client";
 import type { DirectorIdentity } from "@/api/types";
 import { LOGO_URL, BG_IMAGE } from "./constants";
 import { LandingCards } from "./components/LandingCards";
@@ -65,6 +66,19 @@ export default function App() {
     setStep("lookup");
   }
 
+  // Refetch /director so per-dept pendingRequestCount etc. update after a
+  // resolve, without making the director sign out and back in.
+  const refreshIdentity = useCallback(async () => {
+    if (!identity) return;
+    try {
+      const fresh = await api.director(identity.person.netid, identity.person.email);
+      setIdentity(fresh);
+    } catch {
+      // Stale badge is annoying but not worth bouncing the user — log and move on.
+      console.warn("Failed to refresh director identity");
+    }
+  }, [identity]);
+
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-x-hidden font-sans text-slate-900">
       <Toaster position="top-center" richColors />
@@ -120,6 +134,7 @@ export default function App() {
               <ScheduleBuilder
                 key="schedule"
                 identity={identity}
+                onIdentityRefresh={refreshIdentity}
               />
             )}
             {step === "view" && (

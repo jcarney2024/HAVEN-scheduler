@@ -1096,7 +1096,10 @@ app.post("/me/assignments", async (c) => {
       listAll<ShiftRequestFields>({
         baseId: config.haveNManagementBaseId,
         tableId: config.su26ShiftRequestsTableId,
-        filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0)`,
+        // Linked-record fields stringify to their primary-field (name) in
+        // Airtable formulas, not to record IDs, so FIND(personId, …) never
+        // matches. Pull all Pending rows and filter by Requester ID in JS.
+        filterByFormula: `{Status} = 'Pending'`,
       }),
       listAll<VolunteerAppFields>({
         baseId: config.volunteerAppsBaseId,
@@ -1157,6 +1160,7 @@ app.post("/me/assignments", async (c) => {
 
   const pendingByKey = new Map<string, string>();
   for (const r of pendingRequests) {
+    if (!toIdList(r.fields.Requester).includes(person.id)) continue;
     const deptLink = toIdList(r.fields.Department)[0];
     const dateDisplay = selectName(r.fields["Requester Date"]);
     const iso = normalizeVolunteerDate(dateDisplay);
@@ -1303,11 +1307,16 @@ app.post("/requests", async (c) => {
   if (!v.ok) return c.json({ error: v.error }, 409);
 
   // Check for duplicate pending request on (person, requesterDate).
-  const duplicates = await listAll<ShiftRequestFields>({
+  // FIND(personId, ARRAYJOIN(linkedField)) can't match — linked fields
+  // stringify to names in formulas — so filter by Requester ID in JS.
+  const sameDateRequests = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `AND({Status} = 'Pending', FIND('${escapeFormulaString(person.id)}', ARRAYJOIN({Requester})) > 0, {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
   });
+  const duplicates = sameDateRequests.filter((r) =>
+    toIdList(r.fields.Requester).includes(person.id),
+  );
   if (duplicates.length > 0) return c.json({ error: "Pending request already exists" }, 409);
 
   const fields: Record<string, unknown> = {
@@ -1389,11 +1398,16 @@ app.post("/requests/for-dept/:deptId", async (c) => {
   const manageable = manageableDeptIdsFor(allRoster, person.id);
   if (!manageable.has(deptId)) return c.json({ error: "Not authorized" }, 403);
 
-  const requests = await listAll<ShiftRequestFields>({
+  // Linked-record fields stringify to their primary-field value (name) in
+  // Airtable formulas, so FIND(deptId, …) never matches. Pull the full
+  // table and filter by Department record ID in JS.
+  const allRequests = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `FIND('${escapeFormulaString(deptId)}', ARRAYJOIN({Department})) > 0`,
   });
+  const requests = allRequests.filter((r) =>
+    toIdList(r.fields.Department).includes(deptId),
+  );
 
   const referencedIds = new Set<string>();
   for (const r of requests) {

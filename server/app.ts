@@ -1149,10 +1149,10 @@ app.post("/me/assignments", async (c) => {
       ? "application"
       : "none";
 
-  const deptIdByName = new Map<string, { id: string; name: string }>();
+  const deptById = new Map<string, { id: string; name: string }>();
   for (const d of allDepts) {
     const name = d.fields["Department Name"] ?? "";
-    if (name) deptIdByName.set(name, { id: d.id, name });
+    if (name) deptById.set(d.id, { id: d.id, name });
   }
 
   const pendingByKey = new Map<string, string>();
@@ -1173,8 +1173,10 @@ app.post("/me/assignments", async (c) => {
   }> = [];
 
   for (const row of allScheduleRows) {
-    const deptName = selectName(row.fields.Department);
-    const dept = deptIdByName.get(deptName);
+    // Department is a multipleRecordLinks field; Airtable's REST API returns it
+    // as a bare record-id array, so resolve the dept by ID, not by name.
+    const deptId = toIdList(row.fields.Department)[0];
+    const dept = deptId ? deptById.get(deptId) : undefined;
     if (!dept) continue;
     const iso = normalizeVolunteerDate(selectName(row.fields.Date));
     if (!iso) continue;

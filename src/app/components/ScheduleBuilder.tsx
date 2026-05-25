@@ -12,7 +12,13 @@ import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 import type { Person } from "@/api/types";
 
-export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
+export function ScheduleBuilder({
+  identity,
+  onIdentityRefresh,
+}: {
+  identity: DirectorIdentity;
+  onIdentityRefresh: () => Promise<void>;
+}) {
   const [selectedDeptId, setSelectedDeptId] = useState(identity.departments[0]?.id ?? "");
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -383,7 +389,10 @@ export function ScheduleBuilder({ identity }: { identity: DirectorIdentity }) {
         <PendingRequestsTab
           deptId={selectedDeptId}
           credentials={{ netid: identity.person.netid, email: identity.person.email }}
-          onChanged={reload}
+          onChanged={() => {
+            reload();
+            onIdentityRefresh();
+          }}
         />
       ) : mode === "saturday" ? (
         <SaturdayView

@@ -208,11 +208,21 @@ function PublicScheduleBody({ schedule }: { schedule: PublicSchedule }) {
     const assignmentList: Assignment[] = schedule.dates.map((d) => {
       const regulars = d.volunteers.filter((v) => !v.shadow);
       const shadows = d.volunteers.filter((v) => v.shadow);
+      const remoteDirectorIds = d.directors
+        .filter((p) => !!p.name && p.remote)
+        .map((p) => `director:${p.name}`);
+      const remoteVolunteerIds = regulars
+        .filter((v) => !!v.name && v.remote)
+        .map((v) => `volunteer:${v.name}`);
+      const remoteShadowIds = shadows
+        .filter((v) => !!v.name && v.remote)
+        .map((v) => `volunteer-shadow:${v.name}`);
       return {
         date: d.date,
         directorIds: d.directors.filter((p) => !!p.name).map((p) => `director:${p.name}`),
         volunteerIds: regulars.filter((v) => !!v.name).map((v) => `volunteer:${v.name}`),
         shadowIds: shadows.filter((v) => !!v.name).map((v) => `volunteer-shadow:${v.name}`),
+        remoteIds: [...remoteDirectorIds, ...remoteVolunteerIds, ...remoteShadowIds],
       };
     });
 

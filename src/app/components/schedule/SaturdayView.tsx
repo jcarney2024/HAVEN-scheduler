@@ -13,6 +13,7 @@ export function SaturdayView({
   disabled,
   editMode,
   onToggle,
+  onToggleRemote,
   onRemoveVolunteer,
   onAcknowledgeVolunteerUpdate,
   readOnly = false,
@@ -24,6 +25,9 @@ export function SaturdayView({
   disabled: boolean;
   editMode: "assign" | "shadow" | "availability";
   onToggle: (date: string, kind: Kind, personId: string) => void;
+  /** Optional. When provided + person is currently assigned, an "In person /
+   *  Remote" pill appears next to their name in assign mode. */
+  onToggleRemote?: (date: string, kind: Kind, personId: string) => void;
   onRemoveVolunteer?: (person: Person) => void;
   onAcknowledgeVolunteerUpdate?: (person: Person) => void;
   readOnly?: boolean;
@@ -170,7 +174,11 @@ export function SaturdayView({
     const available = people.filter((p) => p.available.includes(activeIso));
     const unavailable = people.filter((p) => !p.available.includes(activeIso));
     const shadowIds = active.shadowIds ?? [];
+    const remoteIds = active.remoteIds ?? [];
     const isShadowOn = (p: Person) => kind === "volunteer" && shadowIds.includes(p.id);
+    const isRemoteOn = (p: Person) => remoteIds.includes(p.id);
+    const remoteHandler = (p: Person) =>
+      !readOnly && onToggleRemote ? () => onToggleRemote(activeIso, kind, p.id) : undefined;
 
     // In read-only mode (public viewer), "available" really means "assigned for
     // this Saturday" — the public schedule data carries no separate availability
@@ -194,6 +202,8 @@ export function SaturdayView({
               readOnly={readOnly}
               assignedCount={countFor(p)}
               isShadow={isShadowOn(p)}
+              isRemote={isRemoteOn(p)}
+              onToggleRemote={remoteHandler(p)}
               onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
               onRemove={removeFor(p)}
             />
@@ -216,6 +226,8 @@ export function SaturdayView({
                   readOnly={readOnly}
                   assignedCount={countFor(p)}
                   isShadow={isShadowOn(p)}
+                  isRemote={isRemoteOn(p)}
+                  onToggleRemote={remoteHandler(p)}
                   onToggle={() => onToggle(activeIso, kind, p.id)}
                   onRemove={removeFor(p)}
                 />

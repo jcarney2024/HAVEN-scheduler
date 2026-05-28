@@ -65,6 +65,11 @@ type ScheduleRowFields = {
   // separately from "Volunteers on Shift" so departments that don't use it
   // can ignore it. Counts toward each volunteer's "X / N" shift-target pill.
   "Shadow Volunteers on Shift"?: unknown;
+  // Optional. Subset of the people in any of the on-shift fields above who
+  // are attending remotely. Membership here is just a flag — the role still
+  // comes from the regular/shadow assignment lists. Empty for departments
+  // that don't use the feature.
+  "Remote on Shift"?: unknown;
 };
 
 type ShiftRequestFields = {
@@ -156,9 +161,18 @@ app.get("/view/:deptId", async (c) => {
         directorIds: toIdList(row.fields["Directors on Shift"]),
         volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
         shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
+        remoteIds: toIdList(row.fields["Remote on Shift"]),
       };
     })
-    .filter((r): r is { date: string; directorIds: string[]; volunteerIds: string[]; shadowIds: string[] } => r !== null);
+    .filter(
+      (r): r is {
+        date: string;
+        directorIds: string[];
+        volunteerIds: string[];
+        shadowIds: string[];
+        remoteIds: string[];
+      } => r !== null,
+    );
 
   const shaped = shapePublicSchedule({
     dept: {
@@ -597,7 +611,12 @@ app.post(`/schedule/:deptId`, async (c) => {
 
   const assignmentsByDate = new Map<
     string,
-    { directorIds: string[]; volunteerIds: string[]; shadowIds: string[] }
+    {
+      directorIds: string[];
+      volunteerIds: string[];
+      shadowIds: string[];
+      remoteIds: string[];
+    }
   >();
   for (const row of allSchedule) {
     if (!toIdList(row.fields.Department).includes(deptId)) continue;
@@ -608,6 +627,7 @@ app.post(`/schedule/:deptId`, async (c) => {
       directorIds: toIdList(row.fields["Directors on Shift"]),
       volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
       shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
+      remoteIds: toIdList(row.fields["Remote on Shift"]),
     });
   }
 
@@ -652,6 +672,7 @@ app.post(`/schedule/:deptId`, async (c) => {
       directorIds: assignmentsByDate.get(iso)?.directorIds ?? [],
       volunteerIds: assignmentsByDate.get(iso)?.volunteerIds ?? [],
       shadowIds: assignmentsByDate.get(iso)?.shadowIds ?? [],
+      remoteIds: assignmentsByDate.get(iso)?.remoteIds ?? [],
     })),
   });
 });
@@ -667,6 +688,7 @@ app.post("/assignment", async (c) => {
     directorIds?: string[];
     volunteerIds?: string[];
     shadowIds?: string[];
+    remoteIds?: string[];
   };
   const { callerNetid, callerEmail, departmentId, date } = body;
   if (!callerNetid || !callerEmail || !departmentId || !date) {
@@ -718,6 +740,9 @@ app.post("/assignment", async (c) => {
   };
   if (Array.isArray(body.shadowIds)) {
     fields["Shadow Volunteers on Shift"] = body.shadowIds;
+  }
+  if (Array.isArray(body.remoteIds)) {
+    fields["Remote on Shift"] = body.remoteIds;
   }
 
   if (existing) {
@@ -1008,18 +1033,23 @@ app.post("/remove-volunteer", async (c) => {
     if (!toIdList(row.fields.Department).includes(departmentId)) return false;
     const vols = toIdList(row.fields["Volunteers on Shift"]);
     const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
-    return vols.includes(personId) || shadows.includes(personId);
+    const remotes = toIdList(row.fields["Remote on Shift"]);
+    return vols.includes(personId) || shadows.includes(personId) || remotes.includes(personId);
   });
   await Promise.all(
     affected.map((row) => {
       const vols = toIdList(row.fields["Volunteers on Shift"]);
       const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
+      const remotes = toIdList(row.fields["Remote on Shift"]);
       const patch: Record<string, unknown> = {};
       if (vols.includes(personId)) {
         patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
       }
       if (shadows.includes(personId)) {
         patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
+      }
+      if (remotes.includes(personId)) {
+        patch["Remote on Shift"] = remotes.filter((id) => id !== personId);
       }
       return patchRecord({
         baseId: config.haveNManagementBaseId,
@@ -1173,6 +1203,7 @@ app.post("/me/assignments", async (c) => {
     date: string;
     role: "director" | "volunteer";
     shadow: boolean;
+    remote: boolean;
     pendingRequestId: string | null;
   }> = [];
 
@@ -1187,6 +1218,7 @@ app.post("/me/assignments", async (c) => {
     const directorIds = toIdList(row.fields["Directors on Shift"]);
     const volunteerIds = toIdList(row.fields["Volunteers on Shift"]);
     const shadowIds = toIdList(row.fields["Shadow Volunteers on Shift"]);
+    const remoteIds = toIdList(row.fields["Remote on Shift"]);
     let role: "director" | "volunteer" | null = null;
     let shadow = false;
     if (directorIds.includes(person.id)) role = "director";
@@ -1202,6 +1234,7 @@ app.post("/me/assignments", async (c) => {
       date: iso,
       role,
       shadow,
+      remote: remoteIds.includes(person.id),
       pendingRequestId: pendingByKey.get(`${dept.id}|${iso}`) ?? null,
     });
   }

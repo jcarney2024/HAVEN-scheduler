@@ -21,6 +21,8 @@ export function PersonRow({
   readOnly = false,
   assignedCount,
   isShadow = false,
+  isRemote = false,
+  onToggleRemote,
   onToggle,
   onRemove,
   onAcknowledgeUpdate,
@@ -37,6 +39,13 @@ export function PersonRow({
   /** True if this volunteer is currently a shadow on the active Saturday. Used
    *  in assign mode to show a "shadow" badge so directors can tell at a glance. */
   isShadow?: boolean;
+  /** True if this person is currently marked remote for the active Saturday.
+   *  Independent of shadow — a shadow can also be remote. */
+  isRemote?: boolean;
+  /** When provided + person is assigned, render an inline "In person / Remote"
+   *  pill the director can click to flip. Undefined hides the affordance, e.g.
+   *  in availability mode or in the public viewer. */
+  onToggleRemote?: () => void;
   onToggle: () => void;
   /** If provided, shows a small ✕ button. Used to drop a volunteer from a dept. */
   onRemove?: () => void;
@@ -77,6 +86,33 @@ export function PersonRow({
           title="Shadowing this shift"
         >
           shadow
+        </span>
+      )}
+      {isAssigned && onToggleRemote && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleRemote();
+          }}
+          disabled={disabled}
+          className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-semibold transition-colors ${
+            isRemote
+              ? "bg-sky-100 text-sky-800 hover:bg-sky-200"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          title={isRemote ? "Marked remote. Click to mark in person." : "Marked in person. Click to mark remote."}
+        >
+          {isRemote ? "remote" : "in person"}
+        </button>
+      )}
+      {isRemote && !onToggleRemote && (
+        <span
+          className="text-[10px] uppercase tracking-wide text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded font-semibold"
+          title="Attending remotely"
+        >
+          remote
         </span>
       )}
       {!readOnly &&

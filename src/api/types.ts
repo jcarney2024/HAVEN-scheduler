@@ -30,6 +30,9 @@ export type Assignment = {
   /** Volunteers attending this Saturday in a shadow/observation role.
    *  Distinct from volunteerIds so we can render them differently. */
   shadowIds: string[];
+  /** Subset of any of the on-shift ids above who are attending remotely.
+   *  Empty for departments that don't use the feature. */
+  remoteIds: string[];
 };
 
 export type ScheduleResponse = {
@@ -63,8 +66,8 @@ export type PublicSchedule = {
   deptName: string;
   dates: Array<{
     date: string; // ISO Saturday key
-    directors: Array<{ name: string }>;
-    volunteers: Array<{ name: string; shadow?: boolean }>;
+    directors: Array<{ name: string; remote?: boolean }>;
+    volunteers: Array<{ name: string; shadow?: boolean; remote?: boolean }>;
   }>;
 };
 
@@ -75,6 +78,8 @@ export type MyAssignment = {
   role: "director" | "volunteer";
   /** True if this assignment is in the "Shadow Volunteers on Shift" list rather than the regular Volunteers list. */
   shadow?: boolean;
+  /** True if this assignment is in the dept's "Remote on Shift" list. */
+  remote?: boolean;
   pendingRequestId: string | null;
 };
 

@@ -56,6 +56,11 @@ export function MyAssignments({
                     shadow
                   </span>
                 )}
+                {a.remote && (
+                  <span className="ml-2 text-[10px] uppercase tracking-wide text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded font-semibold align-middle">
+                    remote
+                  </span>
+                )}
               </div>
               <div className="text-xs text-slate-500 uppercase tracking-wide">
                 {a.role}

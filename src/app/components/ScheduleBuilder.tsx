@@ -66,6 +66,7 @@ export function ScheduleBuilder({
         directorIds: assignment.directorIds,
         volunteerIds: assignment.volunteerIds,
         shadowIds: assignment.shadowIds,
+        remoteIds: assignment.remoteIds,
       });
       setLastSavedAt(new Date());
     } catch (e) {
@@ -128,6 +129,17 @@ export function ScheduleBuilder({
           if (sIdx >= 0) a.shadowIds.splice(sIdx, 1);
         }
       }
+      // If the person is no longer on the shift in ANY role, their remote
+      // flag is meaningless — strip it so a future re-assignment doesn't
+      // resurrect a stale "remote" tag.
+      if (
+        !a.directorIds.includes(personId) &&
+        !a.volunteerIds.includes(personId) &&
+        !a.shadowIds.includes(personId)
+      ) {
+        const rIdx = a.remoteIds.indexOf(personId);
+        if (rIdx >= 0) a.remoteIds.splice(rIdx, 1);
+      }
       persist.schedule(`${date}`, { ...a }, next.department.id);
 
       // same-day conflict warning
@@ -141,6 +153,21 @@ export function ScheduleBuilder({
           toast.message(`Heads up — ${person.name} didn't mark ${date} available.`);
         }
       }
+      return next;
+    });
+  }
+
+  function handleRemoteToggle(date: string, _kind: "director" | "volunteer", personId: string) {
+    if (!data) return;
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const a = next.assignments.find((x) => x.date === date);
+      if (!a) return prev;
+      const idx = a.remoteIds.indexOf(personId);
+      if (idx >= 0) a.remoteIds.splice(idx, 1);
+      else a.remoteIds.push(personId);
+      persist.schedule(`${date}`, { ...a }, next.department.id);
       return next;
     });
   }
@@ -162,6 +189,15 @@ export function ScheduleBuilder({
         // them from regular Volunteers on Shift if they were there.
         const vIdx = a.volunteerIds.indexOf(personId);
         if (vIdx >= 0) a.volunteerIds.splice(vIdx, 1);
+      }
+      // Drop remote flag if they're no longer on the shift at all.
+      if (
+        !a.directorIds.includes(personId) &&
+        !a.volunteerIds.includes(personId) &&
+        !a.shadowIds.includes(personId)
+      ) {
+        const rIdx = a.remoteIds.indexOf(personId);
+        if (rIdx >= 0) a.remoteIds.splice(rIdx, 1);
       }
       persist.schedule(`${date}`, { ...a }, next.department.id);
       return next;
@@ -403,6 +439,9 @@ export function ScheduleBuilder({
           disabled={!data.callerIsDeptDirector}
           editMode={editMode}
           onToggle={handleToggle}
+          onToggleRemote={
+            data.callerIsDeptDirector && editMode === "assign" ? handleRemoteToggle : undefined
+          }
           onRemoveVolunteer={
             !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)
           }

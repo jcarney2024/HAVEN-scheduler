@@ -92,4 +92,24 @@ describe("shapePublicSchedule", () => {
       { name: "Cara Volunteer", shadow: true },
     ]);
   });
+
+  it("flags directors and volunteers in remoteIds with remote=true", () => {
+    const out = shapePublicSchedule({
+      dept,
+      peopleById: people,
+      scheduleRows: [
+        {
+          date: "2026-05-30",
+          directorIds: ["p1"],
+          volunteerIds: ["p2", "p3"],
+          remoteIds: ["p1", "p2"],
+        },
+      ],
+    });
+    expect(out.dates[0].directors).toEqual([{ name: "Alice Director", remote: true }]);
+    expect(out.dates[0].volunteers).toEqual([
+      { name: "Bob Volunteer", remote: true },
+      { name: "Cara Volunteer" },
+    ]);
+  });
 });

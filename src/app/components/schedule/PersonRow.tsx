@@ -1,5 +1,5 @@
 import type { Person } from "@/api/types";
-import { X } from "lucide-react";
+import { ArrowLeftRight, X } from "lucide-react";
 import { ConflictBadge } from "./ConflictBadge";
 
 /**
@@ -97,14 +97,22 @@ export function PersonRow({
             onToggleRemote();
           }}
           disabled={disabled}
-          className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-semibold transition-colors ${
+          className={`group/remote inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
             isRemote
-              ? "bg-sky-100 text-sky-800 hover:bg-sky-200"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              ? "bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200"
+              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:border-slate-400"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
-          title={isRemote ? "Marked remote. Click to mark in person." : "Marked in person. Click to mark remote."}
+          title={
+            isRemote
+              ? "Currently marked Remote. Click to switch to In person."
+              : "Currently marked In person. Click to switch to Remote."
+          }
         >
-          {isRemote ? "remote" : "in person"}
+          <ArrowLeftRight
+            className="w-3 h-3 opacity-60 group-hover/remote:opacity-100 transition-opacity"
+            aria-hidden
+          />
+          {isRemote ? "Remote" : "In person"}
         </button>
       )}
       {isRemote && !onToggleRemote && (

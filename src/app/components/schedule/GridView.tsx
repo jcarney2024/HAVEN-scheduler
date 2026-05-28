@@ -59,8 +59,10 @@ export function GridView({
     const a = byDate[iso];
     const regularIds = kind === "director" ? a?.directorIds ?? [] : a?.volunteerIds ?? [];
     const shadowIds = a?.shadowIds ?? [];
+    const remoteIds = a?.remoteIds ?? [];
     const isShadow = kind === "volunteer" && shadowIds.includes(person.id);
     const isRegular = regularIds.includes(person.id);
+    const isRemote = (isRegular || isShadow) && remoteIds.includes(person.id);
 
     if (editMode === "availability") {
       const sym = available ? "●" : "○";
@@ -110,15 +112,21 @@ export function GridView({
       );
     }
 
-    // assign mode — shadows render as ◐ alongside regular ● so the director
-    // can spot them without flipping modes. Clicking still toggles the regular
-    // assignment (use Shadow mode to flip shadow status).
+    // assign mode — shadows render as ◐ alongside regular ●, and remote
+    // assignments render in sky blue (vs emerald for in-person) so the
+    // director can spot the difference without flipping modes. Clicking
+    // still toggles the regular assignment (use Saturday view to flip
+    // remote / shadow).
     const sameDayConflict = person.conflicts.sameDay.some((c) => c.date === iso);
     const sym = isRegular ? "●" : isShadow ? "◐" : available ? "○" : "—";
     const color = sameDayConflict
       ? "text-red-600"
+      : isRegular && isRemote
+      ? "text-sky-600"
       : isRegular
       ? "text-emerald-600"
+      : isShadow && isRemote
+      ? "text-fuchsia-600"
       : isShadow
       ? "text-purple-600"
       : available
@@ -133,8 +141,12 @@ export function GridView({
         title={
           sameDayConflict
             ? "Same-day conflict in another dept"
+            : isRegular && isRemote
+            ? "Assigned (remote) — use Saturday view to flip in person / remote"
             : isRegular
-            ? "Assigned"
+            ? "Assigned (in person)"
+            : isShadow && isRemote
+            ? "Shadowing remotely — use Saturday view to edit"
             : isShadow
             ? "Shadowing — use Shadow mode to edit"
             : available
@@ -281,7 +293,8 @@ export function GridView({
           </>
         ) : (
           <>
-            <span className="text-emerald-600">●</span> assigned &nbsp;{" "}
+            <span className="text-emerald-600">●</span> in person &nbsp;{" "}
+            <span className="text-sky-600">●</span> remote &nbsp;{" "}
             <span className="text-purple-600">◐</span> shadowing &nbsp; ○ available &nbsp; — not available &nbsp;{" "}
             <span className="text-red-600">●/○ in red</span> = same-day conflict
             in another dept

@@ -210,10 +210,13 @@ export function GridView({
             )}
             {missingCompliance && (
               <span
-                className="text-[10px] uppercase tracking-wide text-red-800 bg-red-100 px-1.5 py-0.5 rounded font-semibold shrink-0"
-                title={`Compliance check (HAVEN Management → Compliance): missing ${missingCompliance.join(" + ")}.`}
+                className="text-[10px] uppercase tracking-wide text-red-800 bg-red-100 px-1 py-0.5 rounded font-semibold shrink-0"
+                title={`Compliance (HAVEN Management → Compliance): missing ${missingCompliance.join(" + ")}.`}
               >
-                missing: {missingCompliance.join(" + ")}
+                {/* Abbreviated to initials so it fits beside the name in the
+                    narrow grid column. C = Volunteer Contract, T = Volunteer
+                    Training. Full text lives in the tooltip + Saturday view. */}
+                miss: {missingCompliance.map((m) => m[0].toUpperCase()).join("+")}
               </span>
             )}
             {canRemove && (

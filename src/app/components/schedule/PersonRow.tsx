@@ -12,6 +12,18 @@ function hasUnacknowledgedUpdate(person: Person): boolean {
   return person.volunteerUpdateAcknowledgedAt < person.volunteerUpdatedAt;
 }
 
+/**
+ * Returns the missing-compliance items for a volunteer, or null if the person
+ * is fully compliant / not a volunteer (directors don't have a compliance field).
+ */
+function missingComplianceItems(person: Person): string[] | null {
+  if (!person.compliance) return null;
+  const missing: string[] = [];
+  if (!person.compliance.contract) missing.push("contract");
+  if (!person.compliance.training) missing.push("training");
+  return missing.length > 0 ? missing : null;
+}
+
 export function PersonRow({
   person,
   isAvailable,
@@ -61,6 +73,7 @@ export function PersonRow({
         person.volunteerUpdatedAt,
       ).toLocaleDateString()}. Click to acknowledge.`
     : "Volunteer updated their availability since application time.";
+  const missingCompliance = !readOnly ? missingComplianceItems(person) : null;
 
   return (
     <label
@@ -143,6 +156,14 @@ export function PersonRow({
           title="Availability has been overridden by a director."
         >
           override
+        </span>
+      )}
+      {missingCompliance && (
+        <span
+          className="text-[10px] uppercase tracking-wide text-red-800 bg-red-100 px-1.5 py-0.5 rounded font-semibold"
+          title={`Compliance check (HAVEN Management → Compliance): missing ${missingCompliance.join(" + ")}.`}
+        >
+          missing: {missingCompliance.join(" + ")}
         </span>
       )}
       {showUpdatedBadge && (

@@ -13,6 +13,7 @@ export type Config = {
   volunteerAppsTableId: string;
   volunteerAppsStaffTableId: string;
   volunteerTrainingAttendanceTableId: string;
+  complianceTableId: string;
 };
 
 export function loadConfig(): Config | null {
@@ -31,6 +32,7 @@ export function loadConfig(): Config | null {
     volunteerAppsTableId: process.env.VOLUNTEER_APPS_TABLE_ID,
     volunteerAppsStaffTableId: process.env.VOLUNTEER_APPS_STAFF_TABLE_ID,
     volunteerTrainingAttendanceTableId: process.env.VOLUNTEER_TRAINING_ATTENDANCE_TABLE_ID,
+    complianceTableId: process.env.COMPLIANCE_TABLE_ID,
   };
   for (const v of Object.values(required)) {
     if (!v) return null;

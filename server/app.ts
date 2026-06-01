@@ -56,6 +56,16 @@ type VolunteerTrainingAttendanceFields = {
   "Minimum Shifts Wanted"?: unknown;
 };
 
+// Compliance table (HAVEN Management). One or more rows per person via Names,
+// which is a multipleRecordLinks into All People. We OR the two
+// volunteer-relevant checkboxes across all rows for a person — having a contract
+// on file once is enough, regardless of which row carries it.
+type ComplianceFields = {
+  Names?: unknown;
+  "Volunteer Contract"?: boolean;
+  "Volunteer Training"?: boolean;
+};
+
 type ScheduleRowFields = {
   Department?: unknown;
   Date?: unknown;
@@ -407,6 +417,7 @@ app.post(`/schedule/:deptId`, async (c) => {
     directorStaff,
     volunteerStaff,
     volunteerTraining,
+    allCompliance,
   ] = await Promise.all([
     listAll<Su26RosterFields>({
       baseId: config.haveNManagementBaseId,
@@ -441,7 +452,32 @@ app.post(`/schedule/:deptId`, async (c) => {
       tableId: config.volunteerTrainingAttendanceTableId,
       fields: ["Applicant Record", "Minimum Shifts Wanted"],
     }),
+    listAll<ComplianceFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.complianceTableId,
+      fields: ["Names", "Volunteer Contract", "Volunteer Training"],
+    }),
   ]);
+
+  // All People recordId → aggregated volunteer compliance.
+  // OR'd across all Compliance rows linked to that person: a contract on file
+  // once is enough, even if it lives on a different role's row.
+  const complianceByPersonId = new Map<
+    string,
+    { contract: boolean; training: boolean }
+  >();
+  for (const row of allCompliance) {
+    const personIds = toIdList(row.fields.Names);
+    const contract = row.fields["Volunteer Contract"] === true;
+    const training = row.fields["Volunteer Training"] === true;
+    for (const pid of personIds) {
+      const prev = complianceByPersonId.get(pid) ?? { contract: false, training: false };
+      complianceByPersonId.set(pid, {
+        contract: prev.contract || contract,
+        training: prev.training || training,
+      });
+    }
+  }
 
   // Recruitment-base "Everyone by name" tables hold the NetID; Applications
   // records link to them via "Link your Staff Record" / "Link your record".
@@ -596,6 +632,13 @@ app.post(`/schedule/:deptId`, async (c) => {
         : null;
     const minShiftsWanted =
       kind === "volunteer" ? volMinShifts.get(netid) ?? null : null;
+    // Volunteers only. Default to { contract:false, training:false } if no
+    // Compliance row exists yet — the UI surfaces that as "missing both",
+    // which is what we want for not-yet-onboarded volunteers.
+    const compliance =
+      kind === "volunteer"
+        ? complianceByPersonId.get(id) ?? { contract: false, training: false }
+        : null;
     return {
       id,
       netid,
@@ -605,6 +648,7 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerUpdatedAt,
       volunteerUpdateAcknowledgedAt,
       minShiftsWanted,
+      compliance,
       conflicts,
     };
   }

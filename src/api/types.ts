@@ -17,6 +17,10 @@ export type Person = {
   volunteerUpdateAcknowledgedAt?: string | null;
   /** Raw "Minimum Shifts Wanted" choice from Volunteer Training Attendance ("4"–"9+"). Volunteers only; null if no training record or no value set. */
   minShiftsWanted?: string | null;
+  /** Aggregated volunteer compliance from the HAVEN Management Compliance table.
+   *  Volunteers only; null for directors. Missing flags appear as a "missing: …"
+   *  badge next to the name in the scheduler. */
+  compliance?: { contract: boolean; training: boolean } | null;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];

@@ -20,6 +20,14 @@ function hasUnacknowledgedUpdate(person: Person): boolean {
   return person.volunteerUpdateAcknowledgedAt < person.volunteerUpdatedAt;
 }
 
+function missingComplianceItems(person: Person): string[] | null {
+  if (!person.compliance) return null;
+  const missing: string[] = [];
+  if (!person.compliance.contract) missing.push("contract");
+  if (!person.compliance.training) missing.push("training");
+  return missing.length > 0 ? missing : null;
+}
+
 function splitDisplay(display: string): { month: string; day: string } {
   // "May 30th" → { month: "May", day: "30" }
   const m = display.match(/^([A-Za-z]+)\s+(\d+)/);
@@ -167,6 +175,7 @@ export function GridView({
           person.volunteerUpdatedAt,
         ).toLocaleDateString()}. Click to acknowledge.`
       : "Volunteer updated their availability.";
+    const missingCompliance = kind === "volunteer" ? missingComplianceItems(person) : null;
     return (
       <tr key={person.id} className="group border-b border-slate-100 last:border-b-0">
         <th
@@ -198,6 +207,14 @@ export function GridView({
               >
                 updated
               </button>
+            )}
+            {missingCompliance && (
+              <span
+                className="text-[10px] uppercase tracking-wide text-red-800 bg-red-100 px-1.5 py-0.5 rounded font-semibold shrink-0"
+                title={`Compliance check (HAVEN Management → Compliance): missing ${missingCompliance.join(" + ")}.`}
+              >
+                missing: {missingCompliance.join(" + ")}
+              </span>
             )}
             {canRemove && (
               <button

@@ -45,7 +45,9 @@ export function computeDayMetrics(c: DayCounts, cfg: DayConfig): DayMetrics {
   const maxPatientCapacity =
     cfg.patientCapacityPerProvider == null ? null : cfg.patientCapacityPerProvider * c.onShift;
   const patientsToReschedule =
-    c.patientsBooked != null && maxPatientCapacity != null ? c.patientsBooked - maxPatientCapacity : null;
+    c.patientsBooked != null && maxPatientCapacity != null
+      ? Math.max(0, c.patientsBooked - maxPatientCapacity)
+      : null;
 
   return {
     headcount: c.onShift,

@@ -66,11 +66,16 @@ export function CapacityPanel({
           <input
             type="number"
             min={0}
+            step={1}
             value={m.patientsBooked ?? ""}
             disabled={!config.onPatientsBooked}
-            onChange={(e) =>
-              config.onPatientsBooked?.(assignment.date, e.target.value === "" ? null : Number(e.target.value))
-            }
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") return config.onPatientsBooked?.(assignment.date, null);
+              const n = e.target.valueAsNumber;
+              if (!Number.isFinite(n) || n < 0) return;
+              config.onPatientsBooked?.(assignment.date, Math.trunc(n));
+            }}
             className="w-16 border border-slate-300 rounded px-1 py-0.5 tabular-nums"
           />
         </label>

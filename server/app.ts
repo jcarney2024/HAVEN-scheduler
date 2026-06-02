@@ -1114,23 +1114,33 @@ app.post("/remove-volunteer", async (c) => {
     const vols = toIdList(row.fields["Volunteers on Shift"]);
     const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
     const remotes = toIdList(row.fields["Remote on Shift"]);
-    return vols.includes(personId) || shadows.includes(personId) || remotes.includes(personId);
+    const triage = toIdList(row.fields["Triage on Shift"]);
+    const walkin = toIdList(row.fields["Walk-in on Shift"]);
+    const cc = toIdList(row.fields["CC on Shift"]);
+    return (
+      vols.includes(personId) ||
+      shadows.includes(personId) ||
+      remotes.includes(personId) ||
+      triage.includes(personId) ||
+      walkin.includes(personId) ||
+      cc.includes(personId)
+    );
   });
   await Promise.all(
     affected.map((row) => {
       const vols = toIdList(row.fields["Volunteers on Shift"]);
       const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
       const remotes = toIdList(row.fields["Remote on Shift"]);
+      const triage = toIdList(row.fields["Triage on Shift"]);
+      const walkin = toIdList(row.fields["Walk-in on Shift"]);
+      const cc = toIdList(row.fields["CC on Shift"]);
       const patch: Record<string, unknown> = {};
-      if (vols.includes(personId)) {
-        patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
-      }
-      if (shadows.includes(personId)) {
-        patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
-      }
-      if (remotes.includes(personId)) {
-        patch["Remote on Shift"] = remotes.filter((id) => id !== personId);
-      }
+      if (vols.includes(personId)) patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
+      if (shadows.includes(personId)) patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
+      if (remotes.includes(personId)) patch["Remote on Shift"] = remotes.filter((id) => id !== personId);
+      if (triage.includes(personId)) patch["Triage on Shift"] = triage.filter((id) => id !== personId);
+      if (walkin.includes(personId)) patch["Walk-in on Shift"] = walkin.filter((id) => id !== personId);
+      if (cc.includes(personId)) patch["CC on Shift"] = cc.filter((id) => id !== personId);
       return patchRecord({
         baseId: config.haveNManagementBaseId,
         tableId: config.su26ScheduleTableId,

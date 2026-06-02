@@ -7,6 +7,10 @@ import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
 import { validateRequest, planApply, executeApply } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
+import {
+  buildComplianceByPersonId,
+  type ComplianceRow,
+} from "./compliance.js";
 
 type AllPeopleFields = {
   NetID?: string;
@@ -460,24 +464,15 @@ app.post(`/schedule/:deptId`, async (c) => {
   ]);
 
   // All People recordId → aggregated volunteer compliance.
-  // OR'd across all Compliance rows linked to that person: a contract on file
-  // once is enough, even if it lives on a different role's row.
-  const complianceByPersonId = new Map<
-    string,
-    { contract: boolean; training: boolean }
-  >();
-  for (const row of allCompliance) {
-    const personIds = toIdList(row.fields.Names);
-    const contract = row.fields["Volunteer Contract"] === true;
-    const training = row.fields["Volunteer Training"] === true;
-    for (const pid of personIds) {
-      const prev = complianceByPersonId.get(pid) ?? { contract: false, training: false };
-      complianceByPersonId.set(pid, {
-        contract: prev.contract || contract,
-        training: prev.training || training,
-      });
-    }
-  }
+  const complianceByPersonId = buildComplianceByPersonId(
+    allCompliance.map(
+      (row): ComplianceRow => ({
+        personIds: toIdList(row.fields.Names),
+        contract: row.fields["Volunteer Contract"] === true,
+        training: row.fields["Volunteer Training"] === true,
+      }),
+    ),
+  );
 
   // Recruitment-base "Everyone by name" tables hold the NetID; Applications
   // records link to them via "Link your Staff Record" / "Link your record".

@@ -823,7 +823,13 @@ app.post("/assignment", async (c) => {
   if (Array.isArray(body.triageIds)) fields["Triage on Shift"] = body.triageIds;
   if (Array.isArray(body.walkinIds)) fields["Walk-in on Shift"] = body.walkinIds;
   if (Array.isArray(body.ccIds)) fields["CC on Shift"] = body.ccIds;
-  if (body.patientsBooked !== undefined) fields["Patients Booked"] = body.patientsBooked;
+  if (body.patientsBooked !== undefined) {
+    const n = body.patientsBooked;
+    if (n !== null && (typeof n !== "number" || !Number.isFinite(n) || n < 0 || !Number.isInteger(n))) {
+      return c.json({ error: "Invalid Patients Booked" }, 400);
+    }
+    fields["Patients Booked"] = n;
+  }
 
   if (existing) {
     await patchRecord({

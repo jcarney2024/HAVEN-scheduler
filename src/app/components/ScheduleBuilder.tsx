@@ -11,6 +11,7 @@ import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
 import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 import type { Person } from "@/api/types";
+import { rolesForDept } from "./schedule/capacity";
 
 export function ScheduleBuilder({
   identity,
@@ -67,6 +68,10 @@ export function ScheduleBuilder({
         volunteerIds: assignment.volunteerIds,
         shadowIds: assignment.shadowIds,
         remoteIds: assignment.remoteIds,
+        triageIds: assignment.triageIds,
+        walkinIds: assignment.walkinIds,
+        ccIds: assignment.ccIds,
+        patientsBooked: assignment.patientsBooked,
       });
       setLastSavedAt(new Date());
     } catch (e) {
@@ -139,6 +144,9 @@ export function ScheduleBuilder({
       ) {
         const rIdx = a.remoteIds.indexOf(personId);
         if (rIdx >= 0) a.remoteIds.splice(rIdx, 1);
+        a.triageIds = a.triageIds.filter((id) => id !== personId);
+        a.walkinIds = a.walkinIds.filter((id) => id !== personId);
+        a.ccIds = a.ccIds.filter((id) => id !== personId);
       }
       persist.schedule(`${date}`, { ...a }, next.department.id);
 
@@ -167,6 +175,47 @@ export function ScheduleBuilder({
       const idx = a.remoteIds.indexOf(personId);
       if (idx >= 0) a.remoteIds.splice(idx, 1);
       else a.remoteIds.push(personId);
+      persist.schedule(`${date}`, { ...a }, next.department.id);
+      return next;
+    });
+  }
+
+  function handleRoleCycle(date: string, personId: string) {
+    if (!data) return;
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const a = next.assignments.find((x) => x.date === date);
+      if (!a) return prev;
+      const cycle: ("clinic" | "triage" | "walkin" | "cc")[] = ["clinic", ...rolesForDept(next.department.name)];
+      const current = a.triageIds.includes(personId)
+        ? "triage"
+        : a.walkinIds.includes(personId)
+          ? "walkin"
+          : a.ccIds.includes(personId)
+            ? "cc"
+            : "clinic";
+      const nextRole = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+      a.triageIds = a.triageIds.filter((id) => id !== personId);
+      a.walkinIds = a.walkinIds.filter((id) => id !== personId);
+      a.ccIds = a.ccIds.filter((id) => id !== personId);
+      if (nextRole === "triage") a.triageIds.push(personId);
+      else if (nextRole === "walkin") a.walkinIds.push(personId);
+      else if (nextRole === "cc") a.ccIds.push(personId);
+      if (!a.volunteerIds.includes(personId)) a.volunteerIds.push(personId);
+      persist.schedule(`${date}`, { ...a }, next.department.id);
+      return next;
+    });
+  }
+
+  function handlePatientsBooked(date: string, value: number | null) {
+    if (!data) return;
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = structuredClone(prev) as ScheduleResponse;
+      const a = next.assignments.find((x) => x.date === date);
+      if (!a) return prev;
+      a.patientsBooked = value;
       persist.schedule(`${date}`, { ...a }, next.department.id);
       return next;
     });
@@ -441,6 +490,19 @@ export function ScheduleBuilder({
           onToggle={handleToggle}
           onToggleRemote={
             data.callerIsDeptDirector && editMode === "assign" ? handleRemoteToggle : undefined
+          }
+          roles={data.callerIsDeptDirector && editMode === "assign" ? rolesForDept(data.department.name) : []}
+          onCycleRole={
+            data.callerIsDeptDirector && editMode === "assign" ? handleRoleCycle : undefined
+          }
+          capacity={
+            editMode === "assign"
+              ? {
+                  idealHeadcount: data.department.idealHeadcount,
+                  patientCapacityPerProvider: data.department.patientCapacityPerProvider,
+                  onPatientsBooked: data.callerIsDeptDirector ? handlePatientsBooked : undefined,
+                }
+              : undefined
           }
           onRemoveVolunteer={
             !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)

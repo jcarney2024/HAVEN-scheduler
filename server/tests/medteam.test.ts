@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCellCode, withRoleMembersOnShift, buildImportPlan } from "../medteam.js";
+import { parseCellCode, withRoleMembersOnShift, buildImportPlan, type SheetPersonRow } from "../medteam.js";
 
 describe("parseCellCode", () => {
   it("maps clinic and role codes", () => {
@@ -39,7 +39,7 @@ describe("withRoleMembersOnShift", () => {
 
 describe("buildImportPlan", () => {
   const dates = ["2026-05-30", "2026-06-06"];
-  const rows = [
+  const rows: SheetPersonRow[] = [
     { name: "Aa", email: "AA@yale.edu", cells: { "2026-05-30": "C+T", "2026-06-06": "A" } },
     { name: "Bb", email: "bb@yale.edu", cells: { "2026-05-30": "W", "2026-06-06": "S" } },
     { name: "Cc", email: "cc@yale.edu", cells: { "2026-05-30": "Z" } }, // unknown code

@@ -491,12 +491,12 @@ export function ScheduleBuilder({
           onToggleRemote={
             data.callerIsDeptDirector && editMode === "assign" ? handleRemoteToggle : undefined
           }
-          roles={data.callerIsDeptDirector && editMode === "assign" ? rolesForDept(data.department.name) : []}
+          roles={editMode === "assign" ? rolesForDept(data.department.name) : []}
           onCycleRole={
             data.callerIsDeptDirector && editMode === "assign" ? handleRoleCycle : undefined
           }
           capacity={
-            editMode === "assign"
+            editMode === "assign" && rolesForDept(data.department.name).length > 0
               ? {
                   idealHeadcount: data.department.idealHeadcount,
                   patientCapacityPerProvider: data.department.patientCapacityPerProvider,

@@ -24,6 +24,8 @@ type AllPeopleFields = {
   // When a director acked the most recent volunteer self-update. If null OR
   // older than "SU 26 — Volunteer Updated At", the builder shows an updated badge.
   "SU 26 — Volunteer Update Acknowledged At"?: string;
+  "Spanish Speaking"?: boolean;
+  "Returning Volunteer"?: boolean;
 };
 
 type Su26RosterFields = {
@@ -32,6 +34,8 @@ type Su26RosterFields = {
   Volunteers?: unknown;
   "Submitted At"?: string;
   "Submitted By"?: unknown;
+  "Ideal Headcount"?: number;
+  "Patient Capacity Per Provider"?: number;
 };
 
 type DirectorAppFields = {
@@ -80,6 +84,10 @@ type ScheduleRowFields = {
   // comes from the regular/shadow assignment lists. Empty for departments
   // that don't use the feature.
   "Remote on Shift"?: unknown;
+  "Triage on Shift"?: unknown;
+  "Walk-in on Shift"?: unknown;
+  "CC on Shift"?: unknown;
+  "Patients Booked"?: number;
 };
 
 type ShiftRequestFields = {
@@ -649,6 +657,8 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerUpdateAcknowledgedAt,
       minShiftsWanted,
       compliance,
+      spanishSpeaking: person?.fields["Spanish Speaking"] === true,
+      returning: person?.fields["Returning Volunteer"] === true,
       conflicts,
     };
   }
@@ -660,6 +670,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: string[];
       shadowIds: string[];
       remoteIds: string[];
+      triageIds: string[];
+      walkinIds: string[];
+      ccIds: string[];
+      patientsBooked: number | null;
     }
   >();
   for (const row of allSchedule) {
@@ -672,6 +686,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
       shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
       remoteIds: toIdList(row.fields["Remote on Shift"]),
+      triageIds: toIdList(row.fields["Triage on Shift"]),
+      walkinIds: toIdList(row.fields["Walk-in on Shift"]),
+      ccIds: toIdList(row.fields["CC on Shift"]),
+      patientsBooked: typeof row.fields["Patients Booked"] === "number" ? row.fields["Patients Booked"] : null,
     });
   }
 
@@ -705,6 +723,9 @@ app.post(`/schedule/:deptId`, async (c) => {
       name: dept.fields["Department Name"] ?? "",
       submittedAt: dept.fields["Submitted At"] ?? null,
       submittedByName,
+      idealHeadcount: typeof dept.fields["Ideal Headcount"] === "number" ? dept.fields["Ideal Headcount"] : null,
+      patientCapacityPerProvider:
+        typeof dept.fields["Patient Capacity Per Provider"] === "number" ? dept.fields["Patient Capacity Per Provider"] : null,
     },
     dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
     roster: {
@@ -717,6 +738,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: assignmentsByDate.get(iso)?.volunteerIds ?? [],
       shadowIds: assignmentsByDate.get(iso)?.shadowIds ?? [],
       remoteIds: assignmentsByDate.get(iso)?.remoteIds ?? [],
+      triageIds: assignmentsByDate.get(iso)?.triageIds ?? [],
+      walkinIds: assignmentsByDate.get(iso)?.walkinIds ?? [],
+      ccIds: assignmentsByDate.get(iso)?.ccIds ?? [],
+      patientsBooked: assignmentsByDate.get(iso)?.patientsBooked ?? null,
     })),
   });
 });

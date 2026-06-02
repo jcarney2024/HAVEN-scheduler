@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCellCode, withRoleMembersOnShift } from "../medteam.js";
+import { parseCellCode, withRoleMembersOnShift, buildImportPlan } from "../medteam.js";
 
 describe("parseCellCode", () => {
   it("maps clinic and role codes", () => {
@@ -34,5 +34,36 @@ describe("withRoleMembersOnShift", () => {
   });
   it("handles empty role lists", () => {
     expect(withRoleMembersOnShift(["a"], [])).toEqual(["a"]);
+  });
+});
+
+describe("buildImportPlan", () => {
+  const dates = ["2026-05-30", "2026-06-06"];
+  const rows = [
+    { name: "Aa", email: "AA@yale.edu", cells: { "2026-05-30": "C+T", "2026-06-06": "A" } },
+    { name: "Bb", email: "bb@yale.edu", cells: { "2026-05-30": "W", "2026-06-06": "S" } },
+    { name: "Cc", email: "cc@yale.edu", cells: { "2026-05-30": "Z" } }, // unknown code
+  ];
+
+  it("lowercases and collects all roster emails", () => {
+    expect(buildImportPlan(rows, dates).emails).toEqual(["aa@yale.edu", "bb@yale.edu", "cc@yale.edu"]);
+  });
+  it("routes codes into per-date role buckets; A contributes nothing", () => {
+    const p = buildImportPlan(rows, dates);
+    expect(p.perDate["2026-05-30"]).toEqual({
+      onShift: ["aa@yale.edu", "bb@yale.edu"],
+      triage: ["aa@yale.edu"],
+      walkin: ["bb@yale.edu"],
+      cc: [],
+      shadow: [],
+    });
+    expect(p.perDate["2026-06-06"]).toEqual({
+      onShift: [], triage: [], walkin: [], cc: [], shadow: ["bb@yale.edu"],
+    });
+  });
+  it("reports unknown non-empty cells", () => {
+    expect(buildImportPlan(rows, dates).unknownCells).toEqual([
+      { email: "cc@yale.edu", date: "2026-05-30", raw: "Z" },
+    ]);
   });
 });

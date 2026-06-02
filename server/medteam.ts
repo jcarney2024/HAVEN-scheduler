@@ -39,3 +39,59 @@ export function withRoleMembersOnShift(volunteerIds: string[], roleLists: string
   for (const list of roleLists) for (const id of list) set.add(id);
   return [...set];
 }
+
+export type SheetPersonRow = {
+  name: string;
+  /** Already-lowercased match key recommended, but we lowercase defensively. */
+  email: string;
+  /** ISO date → raw cell code. */
+  cells: Record<string, string>;
+};
+
+export type DayPlan = {
+  onShift: string[];
+  triage: string[];
+  walkin: string[];
+  cc: string[];
+  shadow: string[];
+};
+
+export type ImportPlan = {
+  emails: string[];
+  perDate: Record<string, DayPlan>;
+  unknownCells: { email: string; date: string; raw: string }[];
+};
+
+export function buildImportPlan(rows: SheetPersonRow[], dates: string[]): ImportPlan {
+  const perDate: Record<string, DayPlan> = {};
+  for (const d of dates) perDate[d] = { onShift: [], triage: [], walkin: [], cc: [], shadow: [] };
+
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  const unknownCells: { email: string; date: string; raw: string }[] = [];
+
+  for (const row of rows) {
+    const email = row.email.trim().toLowerCase();
+    if (!seen.has(email)) {
+      seen.add(email);
+      emails.push(email);
+    }
+    for (const date of dates) {
+      const raw = row.cells[date] ?? "";
+      if (!raw.replace(/ /g, " ").trim()) continue; // empty cell: skip
+      const cell = parseCellCode(raw);
+      if (!cell) {
+        unknownCells.push({ email, date, raw });
+        continue;
+      }
+      const day = perDate[date];
+      if (cell.shadow) day.shadow.push(email);
+      if (cell.onShift) day.onShift.push(email);
+      if (cell.triage) day.triage.push(email);
+      if (cell.walkin) day.walkin.push(email);
+      if (cell.cc) day.cc.push(email);
+    }
+  }
+
+  return { emails, perDate, unknownCells };
+}

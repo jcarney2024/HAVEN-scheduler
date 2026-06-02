@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCellCode } from "../medteam.js";
+import { parseCellCode, withRoleMembersOnShift } from "../medteam.js";
 
 describe("parseCellCode", () => {
   it("maps clinic and role codes", () => {
@@ -22,5 +22,17 @@ describe("parseCellCode", () => {
     expect(parseCellCode("")).toBeNull();
     expect(parseCellCode("   ")).toBeNull();
     expect(parseCellCode("X")).toBeNull();
+  });
+});
+
+describe("withRoleMembersOnShift", () => {
+  it("adds any role member missing from the on-shift list", () => {
+    expect(withRoleMembersOnShift(["a"], [["b"], ["c"]]).sort()).toEqual(["a", "b", "c"]);
+  });
+  it("deduplicates and preserves existing members", () => {
+    expect(withRoleMembersOnShift(["a", "b"], [["b"]]).sort()).toEqual(["a", "b"]);
+  });
+  it("handles empty role lists", () => {
+    expect(withRoleMembersOnShift(["a"], [])).toEqual(["a"]);
   });
 });

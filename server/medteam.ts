@@ -29,3 +29,13 @@ export function parseCellCode(raw: string): CellAssignment | null {
     default: return null;
   }
 }
+
+/**
+ * The invariant for writes: anyone designated a role (triage/walk-in/cc) must
+ * also appear in Volunteers on Shift. Returns the union, deduplicated.
+ */
+export function withRoleMembersOnShift(volunteerIds: string[], roleLists: string[][]): string[] {
+  const set = new Set(volunteerIds);
+  for (const list of roleLists) for (const id of list) set.add(id);
+  return [...set];
+}

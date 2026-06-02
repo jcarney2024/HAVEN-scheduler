@@ -7,6 +7,7 @@ import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
 import { validateRequest, planApply, executeApply } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
+import { withRoleMembersOnShift } from "./medteam.js";
 
 type AllPeopleFields = {
   NetID?: string;
@@ -758,6 +759,10 @@ app.post("/assignment", async (c) => {
     volunteerIds?: string[];
     shadowIds?: string[];
     remoteIds?: string[];
+    triageIds?: string[];
+    walkinIds?: string[];
+    ccIds?: string[];
+    patientsBooked?: number | null;
   };
   const { callerNetid, callerEmail, departmentId, date } = body;
   if (!callerNetid || !callerEmail || !departmentId || !date) {
@@ -800,19 +805,25 @@ app.post("/assignment", async (c) => {
 
   // Only include the shadow field on writes when the client passes it. Lets
   // older clients (and unrelated callers) leave shadow assignments alone.
+  const roleLists = [body.triageIds, body.walkinIds, body.ccIds].filter(Array.isArray) as string[][];
+  const volunteerIds =
+    roleLists.length > 0
+      ? withRoleMembersOnShift(body.volunteerIds ?? [], roleLists)
+      : body.volunteerIds ?? [];
+
   const fields: Record<string, unknown> = {
     Name: `${deptName} — ${dateName}`,
     Department: [departmentId],
     Date: dateName,
     "Directors on Shift": body.directorIds ?? [],
-    "Volunteers on Shift": body.volunteerIds ?? [],
+    "Volunteers on Shift": volunteerIds,
   };
-  if (Array.isArray(body.shadowIds)) {
-    fields["Shadow Volunteers on Shift"] = body.shadowIds;
-  }
-  if (Array.isArray(body.remoteIds)) {
-    fields["Remote on Shift"] = body.remoteIds;
-  }
+  if (Array.isArray(body.shadowIds)) fields["Shadow Volunteers on Shift"] = body.shadowIds;
+  if (Array.isArray(body.remoteIds)) fields["Remote on Shift"] = body.remoteIds;
+  if (Array.isArray(body.triageIds)) fields["Triage on Shift"] = body.triageIds;
+  if (Array.isArray(body.walkinIds)) fields["Walk-in on Shift"] = body.walkinIds;
+  if (Array.isArray(body.ccIds)) fields["CC on Shift"] = body.ccIds;
+  if (body.patientsBooked !== undefined) fields["Patients Booked"] = body.patientsBooked;
 
   if (existing) {
     await patchRecord({

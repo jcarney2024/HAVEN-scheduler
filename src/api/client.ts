@@ -47,6 +47,10 @@ export const api = {
     volunteerIds: string[];
     shadowIds: string[];
     remoteIds: string[];
+    triageIds: string[];
+    walkinIds: string[];
+    ccIds: string[];
+    patientsBooked: number | null;
   }) =>
     request<{ success: true }>("/assignment", {
       method: "POST",

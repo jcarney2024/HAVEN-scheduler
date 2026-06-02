@@ -9,9 +9,11 @@
     "dev:api": "tsx watch dev-server.ts",
     "build": "vite build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "import:medteam": "tsx scripts/import-medteam.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.7",
     "@radix-ui/react-checkbox": "1.1.4",
     "@radix-ui/react-dialog": "1.1.6",
     "@radix-ui/react-label": "2.1.2",
@@ -23,7 +25,6 @@
     "@radix-ui/react-tooltip": "1.1.8",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "@hono/node-server": "^1.13.7",
     "hono": "4.6.16",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
@@ -46,6 +47,7 @@
     "tsx": "^4.19.2",
     "typescript": "5.6.3",
     "vite": "6.3.5",
-    "vitest": "2.1.4"
+    "vitest": "2.1.4",
+    "xlsx": "^0.18.5"
   }
 }

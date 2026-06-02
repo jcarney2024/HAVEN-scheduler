@@ -3,3 +3,6 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Med Team / LCC workbooks may contain PHI (patient MRNs, names) — never commit them.
+*.xlsx

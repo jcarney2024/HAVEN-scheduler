@@ -7,6 +7,7 @@ import { computeConflicts, type ScheduleEntry } from "./conflicts.js";
 import { validateRequest, planApply, executeApply } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
+import { withRoleMembersOnShift } from "./medteam.js";
 import {
   buildComplianceByPersonId,
   buildNonCompliantByDept,
@@ -29,6 +30,8 @@ type AllPeopleFields = {
   // When a director acked the most recent volunteer self-update. If null OR
   // older than "SU 26 — Volunteer Updated At", the builder shows an updated badge.
   "SU 26 — Volunteer Update Acknowledged At"?: string;
+  "Spanish Speaking"?: boolean;
+  "Returning Volunteer"?: boolean;
 };
 
 type Su26RosterFields = {
@@ -37,6 +40,8 @@ type Su26RosterFields = {
   Volunteers?: unknown;
   "Submitted At"?: string;
   "Submitted By"?: unknown;
+  "Ideal Headcount"?: number;
+  "Patient Capacity Per Provider"?: number;
 };
 
 type DirectorAppFields = {
@@ -85,6 +90,10 @@ type ScheduleRowFields = {
   // comes from the regular/shadow assignment lists. Empty for departments
   // that don't use the feature.
   "Remote on Shift"?: unknown;
+  "Triage on Shift"?: unknown;
+  "Walk-in on Shift"?: unknown;
+  "CC on Shift"?: unknown;
+  "Patients Booked"?: number;
 };
 
 type ShiftRequestFields = {
@@ -688,6 +697,8 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerUpdateAcknowledgedAt,
       minShiftsWanted,
       compliance,
+      spanishSpeaking: person?.fields["Spanish Speaking"] === true,
+      returning: person?.fields["Returning Volunteer"] === true,
       conflicts,
     };
   }
@@ -699,6 +710,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: string[];
       shadowIds: string[];
       remoteIds: string[];
+      triageIds: string[];
+      walkinIds: string[];
+      ccIds: string[];
+      patientsBooked: number | null;
     }
   >();
   for (const row of allSchedule) {
@@ -711,6 +726,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: toIdList(row.fields["Volunteers on Shift"]),
       shadowIds: toIdList(row.fields["Shadow Volunteers on Shift"]),
       remoteIds: toIdList(row.fields["Remote on Shift"]),
+      triageIds: toIdList(row.fields["Triage on Shift"]),
+      walkinIds: toIdList(row.fields["Walk-in on Shift"]),
+      ccIds: toIdList(row.fields["CC on Shift"]),
+      patientsBooked: typeof row.fields["Patients Booked"] === "number" ? row.fields["Patients Booked"] : null,
     });
   }
 
@@ -744,6 +763,9 @@ app.post(`/schedule/:deptId`, async (c) => {
       name: dept.fields["Department Name"] ?? "",
       submittedAt: dept.fields["Submitted At"] ?? null,
       submittedByName,
+      idealHeadcount: typeof dept.fields["Ideal Headcount"] === "number" ? dept.fields["Ideal Headcount"] : null,
+      patientCapacityPerProvider:
+        typeof dept.fields["Patient Capacity Per Provider"] === "number" ? dept.fields["Patient Capacity Per Provider"] : null,
     },
     dates: CANONICAL_DATES.map((iso) => ({ iso, display: displayDate(iso) })),
     roster: {
@@ -756,6 +778,10 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerIds: assignmentsByDate.get(iso)?.volunteerIds ?? [],
       shadowIds: assignmentsByDate.get(iso)?.shadowIds ?? [],
       remoteIds: assignmentsByDate.get(iso)?.remoteIds ?? [],
+      triageIds: assignmentsByDate.get(iso)?.triageIds ?? [],
+      walkinIds: assignmentsByDate.get(iso)?.walkinIds ?? [],
+      ccIds: assignmentsByDate.get(iso)?.ccIds ?? [],
+      patientsBooked: assignmentsByDate.get(iso)?.patientsBooked ?? null,
     })),
   });
 });
@@ -772,6 +798,10 @@ app.post("/assignment", async (c) => {
     volunteerIds?: string[];
     shadowIds?: string[];
     remoteIds?: string[];
+    triageIds?: string[];
+    walkinIds?: string[];
+    ccIds?: string[];
+    patientsBooked?: number | null;
   };
   const { callerNetid, callerEmail, departmentId, date } = body;
   if (!callerNetid || !callerEmail || !departmentId || !date) {
@@ -814,18 +844,30 @@ app.post("/assignment", async (c) => {
 
   // Only include the shadow field on writes when the client passes it. Lets
   // older clients (and unrelated callers) leave shadow assignments alone.
+  const roleLists = [body.triageIds, body.walkinIds, body.ccIds].filter(Array.isArray) as string[][];
+  const volunteerIds =
+    roleLists.length > 0
+      ? withRoleMembersOnShift(body.volunteerIds ?? [], roleLists)
+      : body.volunteerIds ?? [];
+
   const fields: Record<string, unknown> = {
     Name: `${deptName} — ${dateName}`,
     Department: [departmentId],
     Date: dateName,
     "Directors on Shift": body.directorIds ?? [],
-    "Volunteers on Shift": body.volunteerIds ?? [],
+    "Volunteers on Shift": volunteerIds,
   };
-  if (Array.isArray(body.shadowIds)) {
-    fields["Shadow Volunteers on Shift"] = body.shadowIds;
-  }
-  if (Array.isArray(body.remoteIds)) {
-    fields["Remote on Shift"] = body.remoteIds;
+  if (Array.isArray(body.shadowIds)) fields["Shadow Volunteers on Shift"] = body.shadowIds;
+  if (Array.isArray(body.remoteIds)) fields["Remote on Shift"] = body.remoteIds;
+  if (Array.isArray(body.triageIds)) fields["Triage on Shift"] = body.triageIds;
+  if (Array.isArray(body.walkinIds)) fields["Walk-in on Shift"] = body.walkinIds;
+  if (Array.isArray(body.ccIds)) fields["CC on Shift"] = body.ccIds;
+  if (body.patientsBooked !== undefined) {
+    const n = body.patientsBooked;
+    if (n !== null && (typeof n !== "number" || !Number.isFinite(n) || n < 0 || !Number.isInteger(n))) {
+      return c.json({ error: "Invalid Patients Booked" }, 400);
+    }
+    fields["Patients Booked"] = n;
   }
 
   if (existing) {
@@ -1117,23 +1159,33 @@ app.post("/remove-volunteer", async (c) => {
     const vols = toIdList(row.fields["Volunteers on Shift"]);
     const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
     const remotes = toIdList(row.fields["Remote on Shift"]);
-    return vols.includes(personId) || shadows.includes(personId) || remotes.includes(personId);
+    const triage = toIdList(row.fields["Triage on Shift"]);
+    const walkin = toIdList(row.fields["Walk-in on Shift"]);
+    const cc = toIdList(row.fields["CC on Shift"]);
+    return (
+      vols.includes(personId) ||
+      shadows.includes(personId) ||
+      remotes.includes(personId) ||
+      triage.includes(personId) ||
+      walkin.includes(personId) ||
+      cc.includes(personId)
+    );
   });
   await Promise.all(
     affected.map((row) => {
       const vols = toIdList(row.fields["Volunteers on Shift"]);
       const shadows = toIdList(row.fields["Shadow Volunteers on Shift"]);
       const remotes = toIdList(row.fields["Remote on Shift"]);
+      const triage = toIdList(row.fields["Triage on Shift"]);
+      const walkin = toIdList(row.fields["Walk-in on Shift"]);
+      const cc = toIdList(row.fields["CC on Shift"]);
       const patch: Record<string, unknown> = {};
-      if (vols.includes(personId)) {
-        patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
-      }
-      if (shadows.includes(personId)) {
-        patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
-      }
-      if (remotes.includes(personId)) {
-        patch["Remote on Shift"] = remotes.filter((id) => id !== personId);
-      }
+      if (vols.includes(personId)) patch["Volunteers on Shift"] = vols.filter((id) => id !== personId);
+      if (shadows.includes(personId)) patch["Shadow Volunteers on Shift"] = shadows.filter((id) => id !== personId);
+      if (remotes.includes(personId)) patch["Remote on Shift"] = remotes.filter((id) => id !== personId);
+      if (triage.includes(personId)) patch["Triage on Shift"] = triage.filter((id) => id !== personId);
+      if (walkin.includes(personId)) patch["Walk-in on Shift"] = walkin.filter((id) => id !== personId);
+      if (cc.includes(personId)) patch["CC on Shift"] = cc.filter((id) => id !== personId);
       return patchRecord({
         baseId: config.haveNManagementBaseId,
         tableId: config.su26ScheduleTableId,

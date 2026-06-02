@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import type { Person, Assignment } from "@/api/types";
 import { PersonRow } from "./PersonRow";
 import { DateTabStrip } from "./DateTabStrip";
+import type { MedRole } from "./capacity";
+import { CapacityPanel, type CapacityConfig } from "./CapacityPanel";
 
 type Kind = "director" | "volunteer";
 
@@ -14,6 +16,9 @@ export function SaturdayView({
   editMode,
   onToggle,
   onToggleRemote,
+  roles = [],
+  onCycleRole,
+  capacity,
   onRemoveVolunteer,
   onAcknowledgeVolunteerUpdate,
   readOnly = false,
@@ -28,6 +33,12 @@ export function SaturdayView({
   /** Optional. When provided + person is currently assigned, an "In person /
    *  Remote" pill appears next to their name in assign mode. */
   onToggleRemote?: (date: string, kind: Kind, personId: string) => void;
+  /** Special clinical roles available for this dept (assign mode). Empty hides role controls. */
+  roles?: MedRole[];
+  /** Cycle a volunteer's clinical role on the active date. */
+  onCycleRole?: (date: string, personId: string) => void;
+  /** When provided (assign mode), renders the per-Saturday capacity panel. */
+  capacity?: CapacityConfig;
   onRemoveVolunteer?: (person: Person) => void;
   onAcknowledgeVolunteerUpdate?: (person: Person) => void;
   readOnly?: boolean;
@@ -37,7 +48,17 @@ export function SaturdayView({
     () => Object.fromEntries(assignments.map((a) => [a.date, a])),
     [assignments],
   );
-  const active = assignmentByIso[activeIso] ?? { date: activeIso, directorIds: [], volunteerIds: [] };
+  const active = assignmentByIso[activeIso] ?? {
+    date: activeIso,
+    directorIds: [],
+    volunteerIds: [],
+    shadowIds: [],
+    remoteIds: [],
+    triageIds: [],
+    walkinIds: [],
+    ccIds: [],
+    patientsBooked: null,
+  };
 
   // Per-volunteer count of in-department shifts already assigned, derived from
   // the current assignments array so it updates live as the director toggles.
@@ -50,6 +71,31 @@ export function SaturdayView({
     }
     return counts;
   }, [assignments]);
+
+  const roleTallyById = useMemo(() => {
+    const t = new Map<string, { triage: number; walkin: number; cc: number }>();
+    const bump = (id: string, key: "triage" | "walkin" | "cc") => {
+      const cur = t.get(id) ?? { triage: 0, walkin: 0, cc: 0 };
+      cur[key] += 1;
+      t.set(id, cur);
+    };
+    for (const a of assignments) {
+      for (const id of a.triageIds ?? []) bump(id, "triage");
+      for (const id of a.walkinIds ?? []) bump(id, "walkin");
+      for (const id of a.ccIds ?? []) bump(id, "cc");
+    }
+    return t;
+  }, [assignments]);
+
+  function roleTallyFor(p: Person): string | undefined {
+    const t = roleTallyById.get(p.id);
+    if (!t) return undefined;
+    const parts: string[] = [];
+    if (roles.includes("triage") && t.triage) parts.push(`Triage ${t.triage}`);
+    if (roles.includes("walkin") && t.walkin) parts.push(`Walk-in ${t.walkin}`);
+    if (roles.includes("cc") && t.cc) parts.push(`CC ${t.cc}`);
+    return parts.length ? parts.join(" · ") : undefined;
+  }
 
   function tabHasAssignments(iso: string) {
     const a = assignmentByIso[iso];
@@ -204,6 +250,22 @@ export function SaturdayView({
               isShadow={isShadowOn(p)}
               isRemote={isRemoteOn(p)}
               onToggleRemote={remoteHandler(p)}
+              role={
+                active.triageIds?.includes(p.id)
+                  ? "triage"
+                  : active.walkinIds?.includes(p.id)
+                    ? "walkin"
+                    : active.ccIds?.includes(p.id)
+                      ? "cc"
+                      : "clinic"
+              }
+              roleCycle={kind === "volunteer" ? roles : undefined}
+              roleTally={kind === "volunteer" ? roleTallyFor(p) : undefined}
+              onCycleRole={
+                kind === "volunteer" && !readOnly && onCycleRole
+                  ? () => onCycleRole(activeIso, p.id)
+                  : undefined
+              }
               onToggle={readOnly ? () => {} : () => onToggle(activeIso, kind, p.id)}
               onRemove={removeFor(p)}
             />
@@ -228,6 +290,22 @@ export function SaturdayView({
                   isShadow={isShadowOn(p)}
                   isRemote={isRemoteOn(p)}
                   onToggleRemote={remoteHandler(p)}
+                  role={
+                    active.triageIds?.includes(p.id)
+                      ? "triage"
+                      : active.walkinIds?.includes(p.id)
+                        ? "walkin"
+                        : active.ccIds?.includes(p.id)
+                          ? "cc"
+                          : "clinic"
+                  }
+                  roleCycle={kind === "volunteer" ? roles : undefined}
+                  roleTally={kind === "volunteer" ? roleTallyFor(p) : undefined}
+                  onCycleRole={
+                    kind === "volunteer" && !readOnly && onCycleRole
+                      ? () => onCycleRole(activeIso, p.id)
+                      : undefined
+                  }
                   onToggle={() => onToggle(activeIso, kind, p.id)}
                   onRemove={removeFor(p)}
                 />
@@ -248,6 +326,15 @@ export function SaturdayView({
   return (
     <div className="space-y-6">
       <DateTabStrip tabs={tabs} activeIso={activeIso} onSelect={setActiveIso} />
+
+      {editMode === "assign" && capacity && (
+        <CapacityPanel
+          assignment={active as Assignment}
+          volunteers={volunteers}
+          roles={roles}
+          config={capacity}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {column("Directors", directors, "director", active.directorIds)}

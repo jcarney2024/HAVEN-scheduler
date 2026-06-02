@@ -14,9 +14,13 @@ function blank(): CellAssignment {
 /**
  * Map a workbook cell code to a normalized role. Returns null for empty/blank
  * or unrecognized codes (callers distinguish the two by pre-checking emptiness).
+ *
+ * The final `\s+` strip removes ALL whitespace, including non-breaking spaces
+ * (U+00A0) that Excel often leaves in cells, so "C + T" / "C + T" both
+ * normalize to "C+T".
  */
 export function parseCellCode(raw: string): CellAssignment | null {
-  const code = raw.replace(/ /g, " ").trim().toUpperCase().replace(/\s+/g, "");
+  const code = raw.trim().toUpperCase().replace(/\s+/g, "");
   if (!code) return null;
   switch (code) {
     case "C": return { ...blank(), onShift: true };
@@ -78,7 +82,7 @@ export function buildImportPlan(rows: SheetPersonRow[], dates: string[]): Import
     }
     for (const date of dates) {
       const raw = row.cells[date] ?? "";
-      if (!raw.replace(/ /g, " ").trim()) continue; // empty cell: skip
+      if (!raw.trim()) continue; // empty cell: skip (trim() also drops a lone non-breaking space)
       const cell = parseCellCode(raw);
       if (!cell) {
         unknownCells.push({ email, date, raw });

@@ -223,6 +223,10 @@ function PublicScheduleBody({ schedule }: { schedule: PublicSchedule }) {
         volunteerIds: regulars.filter((v) => !!v.name).map((v) => `volunteer:${v.name}`),
         shadowIds: shadows.filter((v) => !!v.name).map((v) => `volunteer-shadow:${v.name}`),
         remoteIds: [...remoteDirectorIds, ...remoteVolunteerIds, ...remoteShadowIds],
+        triageIds: [],
+        walkinIds: [],
+        ccIds: [],
+        patientsBooked: null,
       };
     });
 

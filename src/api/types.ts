@@ -21,6 +21,10 @@ export type Person = {
    *  Volunteers only; null for directors. Missing flags appear as a "missing: …"
    *  badge next to the name in the scheduler. */
   compliance?: { contract: boolean; training: boolean } | null;
+  /** True if the person self-identified as Spanish-speaking. */
+  spanishSpeaking?: boolean;
+  /** True if a returning volunteer (from application). */
+  returning?: boolean;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];
@@ -31,12 +35,19 @@ export type Assignment = {
   date: string; // ISO
   directorIds: string[];
   volunteerIds: string[];
-  /** Volunteers attending this Saturday in a shadow/observation role.
-   *  Distinct from volunteerIds so we can render them differently. */
+  /** Volunteers attending this Saturday in a shadow/observation role. */
   shadowIds: string[];
-  /** Subset of any of the on-shift ids above who are attending remotely.
-   *  Empty for departments that don't use the feature. */
+  /** Subset of on-shift ids attending remotely. */
   remoteIds: string[];
+  /** Subset of volunteerIds designated the Triage SCTM (SCTP). */
+  triageIds: string[];
+  /** Subset of volunteerIds designated the Walk-in SCTM (SCTP). */
+  walkinIds: string[];
+  /** Subset of volunteerIds designated CC JCTM (JCTP). */
+  ccIds: string[];
+  /** Director-entered count of patients booked this Saturday. PHI-free aggregate;
+   *  null when not entered. */
+  patientsBooked: number | null;
 };
 
 export type ScheduleResponse = {
@@ -48,6 +59,10 @@ export type ScheduleResponse = {
      *  only — the schedule is always editable and always public. */
     submittedAt: string | null;
     submittedByName: string | null;
+    /** Per-day target headcount for the capacity dashboard; null if unset. */
+    idealHeadcount: number | null;
+    /** Patients one provider can see; max capacity = this × on-shift count. Null = no capacity math (e.g. JCTP). */
+    patientCapacityPerProvider: number | null;
   };
   dates: { iso: string; display: string }[];
   roster: { directors: Person[]; volunteers: Person[] };

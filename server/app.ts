@@ -9,6 +9,7 @@ import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
 import {
   buildComplianceByPersonId,
+  buildNonCompliantByDept,
   type ComplianceRow,
 } from "./compliance.js";
 
@@ -382,6 +383,48 @@ app.post(`/director/:netid`, async (c) => {
     if (d) pendingCountByDept.set(d, (pendingCountByDept.get(d) ?? 0) + 1);
   }
 
+  // Compliance summary per department for the sign-in banner.
+  const allCompliance = await listAll<ComplianceFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.complianceTableId,
+    fields: ["Names", "Volunteer Contract", "Volunteer Training"],
+  });
+  const complianceByPersonId = buildComplianceByPersonId(
+    allCompliance.map(
+      (row): ComplianceRow => ({
+        personIds: toIdList(row.fields.Names),
+        contract: row.fields["Volunteer Contract"] === true,
+        training: row.fields["Volunteer Training"] === true,
+      }),
+    ),
+  );
+
+  const deptVolunteerIds = sorted.map((d) => ({
+    id: d.id,
+    volunteerIds: toIdList(d.fields.Volunteers),
+  }));
+  const allVolunteerIds = [
+    ...new Set(deptVolunteerIds.flatMap((d) => d.volunteerIds)),
+  ];
+  const volunteerPeople = allVolunteerIds.length
+    ? await listAll<AllPeopleFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.allPeopleTableId,
+        filterByFormula: `OR(${allVolunteerIds
+          .map((id) => `RECORD_ID() = '${id}'`)
+          .join(",")})`,
+        fields: ["Name"],
+      })
+    : [];
+  const nameById = new Map(
+    volunteerPeople.map((p) => [p.id, p.fields.Name ?? ""]),
+  );
+  const nonCompliantByDept = buildNonCompliantByDept({
+    depts: deptVolunteerIds,
+    complianceByPersonId,
+    nameById,
+  });
+
   return c.json({
     person: {
       id: person.id,
@@ -394,6 +437,7 @@ app.post(`/director/:netid`, async (c) => {
       id: d.id,
       name: d.fields["Department Name"] ?? "",
       pendingRequestCount: pendingCountByDept.get(d.id) ?? 0,
+      nonCompliantVolunteers: nonCompliantByDept.get(d.id) ?? [],
     })),
   });
 });

@@ -9,6 +9,7 @@ import { SaturdayView } from "./schedule/SaturdayView";
 import { GridView } from "./schedule/GridView";
 import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
 import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
+import { ComplianceBanner } from "./schedule/ComplianceBanner";
 import { useDebouncedSaver } from "@/lib/useDebouncedSaver";
 import type { Person } from "@/api/types";
 import { rolesForDept } from "./schedule/capacity";
@@ -32,6 +33,7 @@ export function ScheduleBuilder({
   const [submitting, setSubmitting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Person | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+  const [complianceDismissed, setComplianceDismissed] = useState(false);
 
   const reload = useCallback(() => {
     if (!selectedDeptId) return;
@@ -371,6 +373,12 @@ export function ScheduleBuilder({
 
   return (
     <div className="bg-white rounded-xl p-4 sm:p-6 lg:p-8 shadow-lg space-y-6 w-full max-w-7xl">
+      {!complianceDismissed && (
+        <ComplianceBanner
+          departments={identity.departments}
+          onDismiss={() => setComplianceDismissed(true)}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           {identity.isAdmin && (

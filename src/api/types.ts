@@ -1,7 +1,17 @@
+export type NonCompliantVolunteer = {
+  id: string;
+  name: string;
+  /** Which items are missing. Non-empty. */
+  missing: ("contract" | "training")[];
+};
+
 export type DepartmentRef = {
   id: string;
   name: string;
   pendingRequestCount: number;
+  /** Volunteers in this department missing a contract and/or training.
+   *  Empty array when everyone is compliant. */
+  nonCompliantVolunteers: NonCompliantVolunteer[];
 };
 
 export type Person = {

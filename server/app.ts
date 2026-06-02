@@ -8,6 +8,11 @@ import { validateRequest, planApply, executeApply } from "./requests.js";
 import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
 import { withRoleMembersOnShift } from "./medteam.js";
+import {
+  buildComplianceByPersonId,
+  buildNonCompliantByDept,
+  type ComplianceRow,
+} from "./compliance.js";
 
 type AllPeopleFields = {
   NetID?: string;
@@ -387,6 +392,48 @@ app.post(`/director/:netid`, async (c) => {
     if (d) pendingCountByDept.set(d, (pendingCountByDept.get(d) ?? 0) + 1);
   }
 
+  // Compliance summary per department for the sign-in banner.
+  const allCompliance = await listAll<ComplianceFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.complianceTableId,
+    fields: ["Names", "Volunteer Contract", "Volunteer Training"],
+  });
+  const complianceByPersonId = buildComplianceByPersonId(
+    allCompliance.map(
+      (row): ComplianceRow => ({
+        personIds: toIdList(row.fields.Names),
+        contract: row.fields["Volunteer Contract"] === true,
+        training: row.fields["Volunteer Training"] === true,
+      }),
+    ),
+  );
+
+  const deptVolunteerIds = sorted.map((d) => ({
+    id: d.id,
+    volunteerIds: toIdList(d.fields.Volunteers),
+  }));
+  const allVolunteerIds = [
+    ...new Set(deptVolunteerIds.flatMap((d) => d.volunteerIds)),
+  ];
+  const volunteerPeople = allVolunteerIds.length
+    ? await listAll<AllPeopleFields>({
+        baseId: config.haveNManagementBaseId,
+        tableId: config.allPeopleTableId,
+        filterByFormula: `OR(${allVolunteerIds
+          .map((id) => `RECORD_ID() = '${id}'`)
+          .join(",")})`,
+        fields: ["Name"],
+      })
+    : [];
+  const nameById = new Map(
+    volunteerPeople.map((p) => [p.id, p.fields.Name ?? ""]),
+  );
+  const nonCompliantByDept = buildNonCompliantByDept({
+    depts: deptVolunteerIds,
+    complianceByPersonId,
+    nameById,
+  });
+
   return c.json({
     person: {
       id: person.id,
@@ -399,6 +446,7 @@ app.post(`/director/:netid`, async (c) => {
       id: d.id,
       name: d.fields["Department Name"] ?? "",
       pendingRequestCount: pendingCountByDept.get(d.id) ?? 0,
+      nonCompliantVolunteers: nonCompliantByDept.get(d.id) ?? [],
     })),
   });
 });
@@ -469,24 +517,15 @@ app.post(`/schedule/:deptId`, async (c) => {
   ]);
 
   // All People recordId → aggregated volunteer compliance.
-  // OR'd across all Compliance rows linked to that person: a contract on file
-  // once is enough, even if it lives on a different role's row.
-  const complianceByPersonId = new Map<
-    string,
-    { contract: boolean; training: boolean }
-  >();
-  for (const row of allCompliance) {
-    const personIds = toIdList(row.fields.Names);
-    const contract = row.fields["Volunteer Contract"] === true;
-    const training = row.fields["Volunteer Training"] === true;
-    for (const pid of personIds) {
-      const prev = complianceByPersonId.get(pid) ?? { contract: false, training: false };
-      complianceByPersonId.set(pid, {
-        contract: prev.contract || contract,
-        training: prev.training || training,
-      });
-    }
-  }
+  const complianceByPersonId = buildComplianceByPersonId(
+    allCompliance.map(
+      (row): ComplianceRow => ({
+        personIds: toIdList(row.fields.Names),
+        contract: row.fields["Volunteer Contract"] === true,
+        training: row.fields["Volunteer Training"] === true,
+      }),
+    ),
+  );
 
   // Recruitment-base "Everyone by name" tables hold the NetID; Applications
   // records link to them via "Link your Staff Record" / "Link your record".

@@ -34,24 +34,29 @@ export function ScheduleBuilder({
   const [removeLoading, setRemoveLoading] = useState(false);
   const [complianceDismissed, setComplianceDismissed] = useState(false);
 
-  const reload = useCallback(() => {
+  const reload = useCallback((opts?: { silent?: boolean }) => {
     if (!selectedDeptId) return;
-    setLoading(true);
+    // Silent reloads (the on-focus refresh) swap fresh data in place without
+    // flipping to the full-screen loading view, so returning to the tab doesn't
+    // flash a spinner. The initial load and department switches stay non-silent.
+    if (!opts?.silent) setLoading(true);
     api
       .schedule(selectedDeptId, identity.person.netid, identity.person.email)
       .then(setData)
       .catch((e) => toast.error((e as Error).message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!opts?.silent) setLoading(false);
+      });
   }, [selectedDeptId, identity.person.netid, identity.person.email]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  // refresh on focus
+  // refresh on focus — silent so coming back to the tab doesn't flash the loader
   useEffect(() => {
     function onVis() {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible") reload({ silent: true });
     }
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);

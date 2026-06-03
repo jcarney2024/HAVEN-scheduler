@@ -100,6 +100,19 @@ describe("parseRhdCell", () => {
     expect(parseRhdCell("   ")).toBeNull();
     expect(parseRhdCell("xyz")).toBeNull();
   });
+  it("treats on-call / if-needed as recognized non-assignments (not on shift)", () => {
+    expect(parseRhdCell("on call")).toEqual({ onShift: false, shadow: false, available: true });
+    expect(parseRhdCell("if needed")).toEqual({ onShift: false, shadow: false, available: true });
+  });
+  it("treats '1&on call' as on shift (the 1 wins)", () => {
+    expect(parseRhdCell("1&on call")).toEqual({ onShift: true, shadow: false, available: false });
+  });
+  it("matches verbose shadow tokens like 'SCTM SHADOW'", () => {
+    expect(parseRhdCell("SCTM SHADOW ")).toEqual({ onShift: false, shadow: true, available: false });
+  });
+  it("leaves genuine junk (e.g. a typo) as unknown", () => {
+    expect(parseRhdCell("isto")).toBeNull();
+  });
 });
 
 describe("buildRhdImportPlan", () => {

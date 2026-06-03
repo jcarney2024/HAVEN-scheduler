@@ -96,9 +96,15 @@ export type RhdCell = { onShift: boolean; shadow: boolean; available: boolean };
 export function parseRhdCell(raw: string): RhdCell | null {
   const code = raw.trim().toLowerCase().replace(/\s+/g, "");
   if (!code) return null;
-  if (code === "1" || code === "1.0") return { onShift: true, shadow: false, available: false };
-  if (code === "s" || code === "shadow") return { onShift: false, shadow: true, available: false };
-  if (code === "a" || code === "available" || code === "avail") return { onShift: false, shadow: false, available: true };
+  // Shadow shifts are sometimes written verbosely (e.g. "SCTM SHADOW") — match on substring.
+  if (code.includes("shadow") || code === "s") return { onShift: false, shadow: true, available: false };
+  // "1" = assigned; "1&on call" = assigned with an on-call note → still on shift.
+  if (code === "1" || code === "1.0" || code === "1&oncall") return { onShift: true, shadow: false, available: false };
+  // Recognized non-assignments (offered / backup). Not written to any shift list,
+  // so an on-call or if-needed volunteer does not inflate coverage counts.
+  if (["a", "available", "avail", "oncall", "ifneeded"].includes(code)) {
+    return { onShift: false, shadow: false, available: true };
+  }
   return null;
 }
 

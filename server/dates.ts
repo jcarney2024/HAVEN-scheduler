@@ -35,10 +35,23 @@ const MONTHS: Record<string, number> = {
 };
 
 function parseFlexibleDateString(input: string): string | null {
+  const trimmed = input.trim();
+
+  // Real Airtable Date fields return ISO 8601 — "2026-06-06" for a date-only
+  // field, or "2026-06-06T00:00:00.000Z" if the field carries a time. Take the
+  // leading YYYY-MM-DD and validate against the canonical Saturdays. A wrong or
+  // off-day value fails the canonical check rather than corrupting a shift.
+  const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) {
+    const iso = isoMatch[1];
+    return (CANONICAL_DATES as readonly string[]).includes(iso) ? iso : null;
+  }
+
+  // Legacy display strings: "June 6th" / "June 6" (single-select / text fields).
   // Lookbehind: only strip the ordinal when it actually follows a digit.
   // Without it, the "st" at the end of "august" gets stripped too, turning
   // "august 1st" into "augu 1" and breaking every August date.
-  const cleaned = input.trim().toLowerCase().replace(/(?<=\d)(st|nd|rd|th)\b/g, "");
+  const cleaned = trimmed.toLowerCase().replace(/(?<=\d)(st|nd|rd|th)\b/g, "");
   const match = cleaned.match(/^([a-z]+)\s+(\d{1,2})$/);
   if (!match) return null;
   const month = MONTHS[match[1]];

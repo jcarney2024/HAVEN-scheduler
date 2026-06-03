@@ -94,7 +94,7 @@ export type RhdCell = { onShift: boolean; shadow: boolean; available: boolean };
  *  (callers pre-check emptiness so they can report unknowns). `1` = on shift;
  *  shadow + available tokens are recognized; everything else is unknown. */
 export function parseRhdCell(raw: string): RhdCell | null {
-  const code = raw.trim().toLowerCase().replace(/\s+/g, "");
+  const code = raw.trim().toLowerCase().replace(/&amp;/gi, "&").replace(/\s+/g, "");
   if (!code) return null;
   // Shadow shifts are sometimes written verbosely (e.g. "SCTM SHADOW") — match on substring.
   if (code.includes("shadow") || code === "s") return { onShift: false, shadow: true, available: false };

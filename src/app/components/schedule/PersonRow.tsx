@@ -214,6 +214,14 @@ export function PersonRow({
           ES
         </span>
       )}
+      {!readOnly && person.licensedRN && (
+        <span
+          className="text-[10px] uppercase tracking-wide text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded font-semibold"
+          title="Licensed RN."
+        >
+          RN
+        </span>
+      )}
       {!readOnly && roleTally && (
         <span
           className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded tabular-nums"

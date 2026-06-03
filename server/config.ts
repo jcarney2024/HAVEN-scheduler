@@ -14,6 +14,10 @@ export type Config = {
   volunteerAppsStaffTableId: string;
   volunteerTrainingAttendanceTableId: string;
   complianceTableId: string;
+  /** RHD reference tables. Optional — absent in non-RHD deployments; the
+   *  /rhd/* endpoints return a clear error when unset rather than 400-ing the app. */
+  rhdAttendingsTableId?: string;
+  rhdClinicsTableId?: string;
 };
 
 export function loadConfig(): Config | null {
@@ -37,5 +41,9 @@ export function loadConfig(): Config | null {
   for (const v of Object.values(required)) {
     if (!v) return null;
   }
-  return required as Config;
+  return {
+    ...required,
+    rhdAttendingsTableId: process.env.RHD_ATTENDINGS_TABLE_ID,
+    rhdClinicsTableId: process.env.RHD_CLINICS_TABLE_ID,
+  } as Config;
 }

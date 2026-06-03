@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
-import type { Person, Assignment } from "@/api/types";
+import type { Person, Assignment, RhdReadinessResponse } from "@/api/types";
 import { PersonRow } from "./PersonRow";
 import { DateTabStrip } from "./DateTabStrip";
 import type { MedRole } from "./capacity";
 import { CapacityPanel, type CapacityConfig } from "./CapacityPanel";
+import { ClinicReadinessPanel } from "./ClinicReadinessPanel";
+
+export const RHD_DEPT_NAMES = ["SCTS", "JCTS", "CCRH"] as const;
+export const isRhdDept = (name: string) => (RHD_DEPT_NAMES as readonly string[]).includes(name);
 
 type Kind = "director" | "volunteer";
 
@@ -19,6 +23,8 @@ export function SaturdayView({
   roles = [],
   onCycleRole,
   capacity,
+  clinicReadiness = null,
+  onSetClinic,
   onRemoveVolunteer,
   onAcknowledgeVolunteerUpdate,
   readOnly = false,
@@ -39,6 +45,9 @@ export function SaturdayView({
   onCycleRole?: (date: string, personId: string) => void;
   /** When provided (assign mode), renders the per-Saturday capacity panel. */
   capacity?: CapacityConfig;
+  /** When the dept is RHD, the readiness payload for all dates; null otherwise. */
+  clinicReadiness?: RhdReadinessResponse | null;
+  onSetClinic?: (date: string, patch: { attendingId?: string | null; director?: string | null; proceduresBooked?: number | null }) => void;
   onRemoveVolunteer?: (person: Person) => void;
   onAcknowledgeVolunteerUpdate?: (person: Person) => void;
   readOnly?: boolean;
@@ -335,6 +344,18 @@ export function SaturdayView({
           config={capacity}
         />
       )}
+
+      {editMode === "assign" && clinicReadiness && (() => {
+        const r = clinicReadiness.clinics.find((x) => x.date === activeIso);
+        return r ? (
+          <ClinicReadinessPanel
+            readiness={r}
+            attendings={clinicReadiness.attendings}
+            disabled={disabled}
+            onChange={(patch) => onSetClinic?.(activeIso, patch)}
+          />
+        ) : null;
+      })()}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {column("Directors", directors, "director", active.directorIds)}

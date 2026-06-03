@@ -10,7 +10,8 @@
     "build": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "import:medteam": "tsx scripts/import-medteam.ts"
+    "import:medteam": "tsx scripts/import-medteam.ts",
+    "import:rhd": "tsx scripts/import-rhd.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

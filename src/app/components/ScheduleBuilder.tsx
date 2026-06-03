@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import type { Assignment, DirectorIdentity, ScheduleResponse } from "@/api/types";
+import type {
+  Assignment,
+  DirectorIdentity,
+  RhdReadinessResponse,
+  ScheduleResponse,
+} from "@/api/types";
 import { DepartmentSwitcher } from "./schedule/DepartmentSwitcher";
 import { StatsBar } from "./schedule/StatsBar";
 import { ViewToggle, type ViewMode } from "./schedule/ViewToggle";
-import { SaturdayView } from "./schedule/SaturdayView";
+import { SaturdayView, isRhdDept } from "./schedule/SaturdayView";
 import { GridView } from "./schedule/GridView";
 import { RemoveVolunteerModal } from "./schedule/RemoveVolunteerModal";
 import { PendingRequestsTab } from "./schedule/PendingRequestsTab";
@@ -23,6 +28,7 @@ export function ScheduleBuilder({
 }) {
   const [selectedDeptId, setSelectedDeptId] = useState(identity.departments[0]?.id ?? "");
   const [data, setData] = useState<ScheduleResponse | null>(null);
+  const [rhdReadiness, setRhdReadiness] = useState<RhdReadinessResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("saturday");
   const [editMode, setEditMode] = useState<"assign" | "shadow" | "availability" | "requests">(
@@ -43,7 +49,20 @@ export function ScheduleBuilder({
     if (!opts?.silent) setLoading(true);
     api
       .schedule(selectedDeptId, identity.person.netid, identity.person.email)
-      .then(setData)
+      .then((res) => {
+        setData(res);
+        // RHD depts (SCTS/JCTS/CCRH) carry per-clinic readiness shown on the
+        // active Saturday. Refetch alongside the schedule so coverage stays live
+        // after an assignment; clear it for non-RHD depts.
+        if (isRhdDept(res.department.name)) {
+          api
+            .rhdReadiness(identity.person.netid, identity.person.email)
+            .then(setRhdReadiness)
+            .catch((e) => toast.error((e as Error).message));
+        } else {
+          setRhdReadiness(null);
+        }
+      })
       .catch((e) => toast.error((e as Error).message))
       .finally(() => {
         if (!opts?.silent) setLoading(false);
@@ -516,6 +535,18 @@ export function ScheduleBuilder({
                   onPatientsBooked: data.callerIsDeptDirector ? handlePatientsBooked : undefined,
                 }
               : undefined
+          }
+          clinicReadiness={isRhdDept(data.department.name) ? rhdReadiness : null}
+          onSetClinic={(date, patch) =>
+            api
+              .setRhdClinic({
+                callerNetid: identity.person.netid,
+                callerEmail: identity.person.email,
+                date,
+                ...patch,
+              })
+              .then(() => reload({ silent: true }))
+              .catch((e) => toast.error((e as Error).message))
           }
           onRemoveVolunteer={
             !data.callerIsDeptDirector ? undefined : (p) => setRemoveTarget(p)

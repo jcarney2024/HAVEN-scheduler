@@ -54,6 +54,7 @@ type VolunteerAppFields = {
   NetID?: string;
   "General Availability"?: unknown;
   "Link your record"?: unknown;
+  "Spanish Proficiency Level"?: unknown;
 };
 
 type StaffMirrorFields = {
@@ -492,7 +493,7 @@ app.post(`/schedule/:deptId`, async (c) => {
     listAll<VolunteerAppFields>({
       baseId: config.volunteerAppsBaseId,
       tableId: config.volunteerAppsTableId,
-      fields: ["NetID", "General Availability", "Link your record"],
+      fields: ["NetID", "General Availability", "Link your record", "Spanish Proficiency Level"],
     }),
     listAll<StaffMirrorFields>({
       baseId: config.directorAppsBaseId,
@@ -620,6 +621,29 @@ app.post(`/schedule/:deptId`, async (c) => {
     if (min) volMinShifts.set(nid, min);
   }
 
+  // NetID → true when the volunteer reported Spanish proficiency at
+  // "Conversational" or above on their application. This drives spanishSpeaking
+  // live (auto-syncs as applications change); the manual "Spanish Speaking"
+  // checkbox on All People is OR'd in as an override for people the app doesn't
+  // cover (e.g. directors).
+  const SPANISH_CONVERSATIONAL_PLUS = new Set([
+    "Conversational",
+    "Fluent (native)",
+    "Fluent (non-native)",
+  ]);
+  const volSpanish = new Map<string, boolean>();
+  for (const r of allVolunteerApps) {
+    const nid = resolveAppNetid(
+      r.fields.NetID,
+      r.fields["Link your record"],
+      volunteerStaffNetidById,
+    );
+    if (!nid) continue;
+    if (SPANISH_CONVERSATIONAL_PLUS.has(selectName(r.fields["Spanish Proficiency Level"]))) {
+      volSpanish.set(nid, true);
+    }
+  }
+
   // fetch All People for everyone on this dept's roster (one batch)
   const dirIds = toIdList(dept.fields.Directors);
   const volIds = toIdList(dept.fields.Volunteers);
@@ -697,7 +721,9 @@ app.post(`/schedule/:deptId`, async (c) => {
       volunteerUpdateAcknowledgedAt,
       minShiftsWanted,
       compliance,
-      spanishSpeaking: person?.fields["Spanish Speaking"] === true,
+      spanishSpeaking:
+        (kind === "volunteer" && volSpanish.get(netid) === true) ||
+        person?.fields["Spanish Speaking"] === true,
       returning: person?.fields["Returning Volunteer"] === true,
       conflicts,
     };

@@ -1016,6 +1016,17 @@ app.post("/rhd/clinic", async (c) => {
     if (typeof n !== "number" || !Number.isFinite(n) || !Number.isInteger(n) || n < 0) return c.json({ error: "Invalid Procedures Booked" }, 400);
   }
 
+  if (body.attendingId !== undefined && body.attendingId) {
+    if (!config.rhdAttendingsTableId) return c.json({ error: "RHD tables not configured" }, 400);
+    const match = await listAll<RhdAttendingFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.rhdAttendingsTableId,
+      filterByFormula: `RECORD_ID() = '${escapeFormulaString(body.attendingId)}'`,
+      pageSize: 1,
+    });
+    if (!match[0]) return c.json({ error: "Invalid Attending" }, 400);
+  }
+
   const clinics = await listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId });
   const existing = clinics.find((row) => normalizeVolunteerDate(selectName(row.fields.Date)) === date);
   const fields: Record<string, unknown> = { Date: displayDate(date) };

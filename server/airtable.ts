@@ -59,12 +59,16 @@ export async function createRecord<F = Record<string, unknown>>(opts: {
   baseId: string;
   tableId: string;
   fields: Record<string, unknown>;
+  // When true, Airtable coerces string values to the field's type. Used on
+  // date writes so an ISO string is accepted by a single-select during the
+  // window before the field is converted to a real Date field.
+  typecast?: boolean;
 }): Promise<AirtableRecord<F>> {
   const url = `${BASE}/${opts.baseId}/${encodeURIComponent(opts.tableId)}`;
   const res = await fetchWithRetry(url, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ fields: opts.fields }),
+    body: JSON.stringify({ fields: opts.fields, ...(opts.typecast ? { typecast: true } : {}) }),
   });
   if (!res.ok) throw new Error(`Airtable create failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as AirtableRecord<F>;
@@ -75,12 +79,14 @@ export async function patchRecord<F = Record<string, unknown>>(opts: {
   tableId: string;
   recordId: string;
   fields: Record<string, unknown>;
+  // See createRecord — true lets ISO date strings write into a still-select field.
+  typecast?: boolean;
 }): Promise<AirtableRecord<F>> {
   const url = `${BASE}/${opts.baseId}/${encodeURIComponent(opts.tableId)}/${opts.recordId}`;
   const res = await fetchWithRetry(url, {
     method: "PATCH",
     headers: headers(),
-    body: JSON.stringify({ fields: opts.fields }),
+    body: JSON.stringify({ fields: opts.fields, ...(opts.typecast ? { typecast: true } : {}) }),
   });
   if (!res.ok) throw new Error(`Airtable patch failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as AirtableRecord<F>;

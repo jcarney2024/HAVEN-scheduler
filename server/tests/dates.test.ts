@@ -43,6 +43,18 @@ describe("normalizeVolunteerDate", () => {
   it("returns null for unknown input", () => {
     expect(normalizeVolunteerDate("Easter")).toBeNull();
   });
+
+  // Real Airtable Date fields return ISO over the API. Reads must accept it
+  // so the portal keeps working the instant the field type is flipped.
+  it("maps ISO date '2026-06-06' to itself", () => {
+    expect(normalizeVolunteerDate("2026-06-06")).toBe("2026-06-06");
+  });
+  it("maps an ISO datetime to the date part", () => {
+    expect(normalizeVolunteerDate("2026-06-06T00:00:00.000Z")).toBe("2026-06-06");
+  });
+  it("returns null for a non-canonical ISO date (not one of the 18 Saturdays)", () => {
+    expect(normalizeVolunteerDate("2026-06-07")).toBeNull();
+  });
 });
 
 describe("normalizeDirectorDate", () => {
@@ -54,6 +66,9 @@ describe("normalizeDirectorDate", () => {
   });
   it("returns null for unknown input", () => {
     expect(normalizeDirectorDate("Halloween")).toBeNull();
+  });
+  it("maps ISO date '2026-05-30' to itself", () => {
+    expect(normalizeDirectorDate("2026-05-30")).toBe("2026-05-30");
   });
 });
 

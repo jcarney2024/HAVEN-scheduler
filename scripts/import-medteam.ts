@@ -190,7 +190,7 @@ async function main() {
       const fields: Record<string, unknown> = {
         Name: `${deptName} — ${displayDate(iso)}`,
         Department: [deptId],
-        Date: displayDate(iso),
+        Date: iso,
         "Volunteers on Shift": withRoleMembersOnShift(onShiftIds, [triageIds, walkinIds, ccIds]),
         "Shadow Volunteers on Shift": ids(d.shadow),
         "Triage on Shift": triageIds,
@@ -199,9 +199,9 @@ async function main() {
       };
       const existing = rowFor(iso);
       if (existing) {
-        await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, recordId: existing.id, fields });
+        await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, recordId: existing.id, fields, typecast: true });
       } else {
-        await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, fields });
+        await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, fields, typecast: true });
       }
     }
     console.log(`  [${deptName}] writes complete.`);

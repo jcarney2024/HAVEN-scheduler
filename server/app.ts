@@ -1029,15 +1029,15 @@ app.post("/rhd/clinic", async (c) => {
 
   const clinics = await listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId });
   const existing = clinics.find((row) => normalizeVolunteerDate(selectName(row.fields.Date)) === date);
-  const fields: Record<string, unknown> = { Date: displayDate(date) };
+  const fields: Record<string, unknown> = { Date: date };
   if (body.attendingId !== undefined) fields["Attending"] = body.attendingId ? [body.attendingId] : [];
   if (body.director !== undefined) fields["Director on point"] = body.director ?? "";
   if (body.proceduresBooked !== undefined) fields["Procedures Booked"] = body.proceduresBooked;
 
   if (existing) {
-    await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, recordId: existing.id, fields });
+    await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, recordId: existing.id, fields, typecast: true });
   } else {
-    await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, fields });
+    await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, fields, typecast: true });
   }
   return c.json({ success: true });
 });
@@ -1109,7 +1109,7 @@ app.post("/assignment", async (c) => {
   const fields: Record<string, unknown> = {
     Name: `${deptName} — ${dateName}`,
     Department: [departmentId],
-    Date: dateName,
+    Date: date,
     "Directors on Shift": body.directorIds ?? [],
     "Volunteers on Shift": volunteerIds,
   };
@@ -1132,12 +1132,14 @@ app.post("/assignment", async (c) => {
       tableId: config.su26ScheduleTableId,
       recordId: existing.id,
       fields,
+      typecast: true,
     });
   } else {
     await createRecord({
       baseId: config.haveNManagementBaseId,
       tableId: config.su26ScheduleTableId,
       fields,
+      typecast: true,
     });
   }
 
@@ -1731,16 +1733,20 @@ app.post("/requests", async (c) => {
   });
   if (!v.ok) return c.json({ error: v.error }, 409);
 
-  // Check for duplicate pending request on (person, requesterDate).
-  // FIND(personId, ARRAYJOIN(linkedField)) can't match — linked fields
-  // stringify to names in formulas — so filter by Requester ID in JS.
+  // Check for a duplicate pending request on (person, requesterDate). We pull
+  // all pending rows and match BOTH the linked Requester id and the date in JS:
+  // linked fields stringify to names in formulas (so FIND can't match), and
+  // Requester Date is a real Date field, so a string-equality formula won't
+  // match either. The pending set for one season is tiny.
   const sameDateRequests = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+    filterByFormula: `{Status} = 'Pending'`,
   });
-  const duplicates = sameDateRequests.filter((r) =>
-    toIdList(r.fields.Requester).includes(person.id),
+  const duplicates = sameDateRequests.filter(
+    (r) =>
+      toIdList(r.fields.Requester).includes(person.id) &&
+      normalizeVolunteerDate(selectName(r.fields["Requester Date"])) === requesterDate,
   );
   if (duplicates.length > 0) return c.json({ error: "Pending request already exists" }, 409);
 
@@ -1748,12 +1754,12 @@ app.post("/requests", async (c) => {
     Department: [dept.id],
     Requester: [person.id],
     "Requester Email": callerEmail,
-    "Requester Date": displayDate(requesterDate),
+    "Requester Date": requesterDate,
     Status: "Pending",
   };
   if (targetPersonId && targetDate) {
     fields.Target = [targetPersonId];
-    fields["Target Date"] = displayDate(targetDate);
+    fields["Target Date"] = targetDate;
   }
   if (note) fields.Note = note;
 
@@ -1761,6 +1767,7 @@ app.post("/requests", async (c) => {
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
     fields,
+    typecast: true,
   });
 
   // Post-create race check: two concurrent submissions can both pass the
@@ -1770,10 +1777,13 @@ app.post("/requests", async (c) => {
   const afterCreate = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+    filterByFormula: `{Status} = 'Pending'`,
   });
   const competing = afterCreate.filter(
-    (r) => r.id !== created.id && toIdList(r.fields.Requester).includes(person.id),
+    (r) =>
+      r.id !== created.id &&
+      toIdList(r.fields.Requester).includes(person.id) &&
+      normalizeVolunteerDate(selectName(r.fields["Requester Date"])) === requesterDate,
   );
   const lostRace = competing.some((r) => {
     if (r.createdTime < created.createdTime) return true;

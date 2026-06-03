@@ -78,7 +78,7 @@ async function main() {
   if (!config) throw new Error("Missing Airtable config — check .env.local");
 
   // Parse from a buffer (XLSX.readFile isn't reliably exposed under tsx/ESM).
-  const wb = XLSX.read(readFileSync(FILE), { cellDates: true });
+  const wb = XLSX.read(readFileSync(FILE), { type: "buffer", cellDates: true });
 
   const allPeople = await listAll<{ "Contact Email"?: string; Name?: string }>({
     baseId: config.haveNManagementBaseId,

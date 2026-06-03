@@ -449,15 +449,15 @@ async function main() {
       const fields: Record<string, unknown> = {
         Name: `${dept} — ${displayDate(iso)}`,
         Department: [deptId],
-        Date: displayDate(iso),
+        Date: iso,
         "Volunteers on Shift": onShiftIds,
         "Shadow Volunteers on Shift": shadowIds,
       };
       const existing = rowFor(iso);
       if (existing) {
-        await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, recordId: existing.id, fields });
+        await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, recordId: existing.id, fields, typecast: true });
       } else {
-        await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, fields });
+        await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId, fields, typecast: true });
       }
     }
   }
@@ -476,7 +476,7 @@ async function main() {
     const attName = attendingByIso[iso];
     const director = directorByIso[iso] ?? "";
     const fields: Record<string, unknown> = {
-      Date: displayDate(iso),
+      Date: iso,
       "Director on point": director,
     };
     if (attName) {
@@ -485,9 +485,9 @@ async function main() {
     }
     const existing = clinicRowFor(iso);
     if (existing) {
-      await patchRecord({ baseId: config.haveNManagementBaseId, tableId: rhdClinicsTableId, recordId: existing.id, fields });
+      await patchRecord({ baseId: config.haveNManagementBaseId, tableId: rhdClinicsTableId, recordId: existing.id, fields, typecast: true });
     } else {
-      await createRecord({ baseId: config.haveNManagementBaseId, tableId: rhdClinicsTableId, fields });
+      await createRecord({ baseId: config.haveNManagementBaseId, tableId: rhdClinicsTableId, fields, typecast: true });
     }
   }
 

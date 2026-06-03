@@ -32,6 +32,7 @@ type AllPeopleFields = {
   "SU 26 — Volunteer Update Acknowledged At"?: string;
   "Spanish Speaking"?: boolean;
   "Returning Volunteer"?: boolean;
+  "Licensed RN"?: boolean;
 };
 
 type Su26RosterFields = {
@@ -725,6 +726,7 @@ app.post(`/schedule/:deptId`, async (c) => {
         (kind === "volunteer" && volSpanish.get(netid) === true) ||
         person?.fields["Spanish Speaking"] === true,
       returning: person?.fields["Returning Volunteer"] === true,
+      licensedRN: person?.fields["Licensed RN"] === true,
       conflicts,
     };
   }

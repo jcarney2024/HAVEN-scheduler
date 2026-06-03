@@ -1733,16 +1733,20 @@ app.post("/requests", async (c) => {
   });
   if (!v.ok) return c.json({ error: v.error }, 409);
 
-  // Check for duplicate pending request on (person, requesterDate).
-  // FIND(personId, ARRAYJOIN(linkedField)) can't match — linked fields
-  // stringify to names in formulas — so filter by Requester ID in JS.
+  // Check for a duplicate pending request on (person, requesterDate). We pull
+  // all pending rows and match BOTH the linked Requester id and the date in JS:
+  // linked fields stringify to names in formulas (so FIND can't match), and
+  // Requester Date is a real Date field, so a string-equality formula won't
+  // match either. The pending set for one season is tiny.
   const sameDateRequests = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+    filterByFormula: `{Status} = 'Pending'`,
   });
-  const duplicates = sameDateRequests.filter((r) =>
-    toIdList(r.fields.Requester).includes(person.id),
+  const duplicates = sameDateRequests.filter(
+    (r) =>
+      toIdList(r.fields.Requester).includes(person.id) &&
+      normalizeVolunteerDate(selectName(r.fields["Requester Date"])) === requesterDate,
   );
   if (duplicates.length > 0) return c.json({ error: "Pending request already exists" }, 409);
 
@@ -1773,10 +1777,13 @@ app.post("/requests", async (c) => {
   const afterCreate = await listAll<ShiftRequestFields>({
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
-    filterByFormula: `AND({Status} = 'Pending', {Requester Date} = '${escapeFormulaString(displayDate(requesterDate))}')`,
+    filterByFormula: `{Status} = 'Pending'`,
   });
   const competing = afterCreate.filter(
-    (r) => r.id !== created.id && toIdList(r.fields.Requester).includes(person.id),
+    (r) =>
+      r.id !== created.id &&
+      toIdList(r.fields.Requester).includes(person.id) &&
+      normalizeVolunteerDate(selectName(r.fields["Requester Date"])) === requesterDate,
   );
   const lostRace = competing.some((r) => {
     if (r.createdTime < created.createdTime) return true;

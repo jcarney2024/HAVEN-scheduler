@@ -35,6 +35,8 @@ export type Person = {
   spanishSpeaking?: boolean;
   /** True if a returning volunteer (from application). */
   returning?: boolean;
+  /** True if the person is a licensed RN (drives # RNs coverage + the depo flag). */
+  licensedRN?: boolean;
   conflicts: {
     sameDay: { date: string; otherDept: string }[];
     crossTerm: { date: string; otherDept: string }[];
@@ -143,4 +145,34 @@ export type ShiftRequest = {
 export type RequestsForDept = {
   pending: ShiftRequest[];
   recent: ShiftRequest[];
+};
+
+export type ProcedureStatus = "yes" | "no" | "unknown";
+export type ProcedureKey = "iudIn" | "iudOut" | "nexplanon" | "gac" | "emb" | "seesMale";
+
+export type Attending = {
+  id: string;
+  scheduleName: string;
+  fullName: string;
+  procedures: Record<ProcedureKey, ProcedureStatus>;
+  notes?: string;
+};
+
+export type ClinicReadiness = {
+  date: string;
+  closed: boolean;
+  attending: Attending | null;
+  director: string | null;
+  procedures: Record<ProcedureKey, ProcedureStatus>;
+  coverage: { sctm: number; jctm: number; rn: number; spanish: number };
+  depoOk: boolean;
+  proceduresBooked: number | null;
+  procedureCapWarning: boolean;
+  emails: string[];
+};
+
+export type RhdReadinessResponse = {
+  maxProceduresPerClinic: number;
+  attendings: Attending[];
+  clinics: ClinicReadiness[];
 };

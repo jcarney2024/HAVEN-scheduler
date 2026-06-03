@@ -1029,15 +1029,15 @@ app.post("/rhd/clinic", async (c) => {
 
   const clinics = await listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId });
   const existing = clinics.find((row) => normalizeVolunteerDate(selectName(row.fields.Date)) === date);
-  const fields: Record<string, unknown> = { Date: displayDate(date) };
+  const fields: Record<string, unknown> = { Date: date };
   if (body.attendingId !== undefined) fields["Attending"] = body.attendingId ? [body.attendingId] : [];
   if (body.director !== undefined) fields["Director on point"] = body.director ?? "";
   if (body.proceduresBooked !== undefined) fields["Procedures Booked"] = body.proceduresBooked;
 
   if (existing) {
-    await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, recordId: existing.id, fields });
+    await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, recordId: existing.id, fields, typecast: true });
   } else {
-    await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, fields });
+    await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, fields, typecast: true });
   }
   return c.json({ success: true });
 });
@@ -1109,7 +1109,7 @@ app.post("/assignment", async (c) => {
   const fields: Record<string, unknown> = {
     Name: `${deptName} — ${dateName}`,
     Department: [departmentId],
-    Date: dateName,
+    Date: date,
     "Directors on Shift": body.directorIds ?? [],
     "Volunteers on Shift": volunteerIds,
   };
@@ -1132,12 +1132,14 @@ app.post("/assignment", async (c) => {
       tableId: config.su26ScheduleTableId,
       recordId: existing.id,
       fields,
+      typecast: true,
     });
   } else {
     await createRecord({
       baseId: config.haveNManagementBaseId,
       tableId: config.su26ScheduleTableId,
       fields,
+      typecast: true,
     });
   }
 
@@ -1748,12 +1750,12 @@ app.post("/requests", async (c) => {
     Department: [dept.id],
     Requester: [person.id],
     "Requester Email": callerEmail,
-    "Requester Date": displayDate(requesterDate),
+    "Requester Date": requesterDate,
     Status: "Pending",
   };
   if (targetPersonId && targetDate) {
     fields.Target = [targetPersonId];
-    fields["Target Date"] = displayDate(targetDate);
+    fields["Target Date"] = targetDate;
   }
   if (note) fields.Note = note;
 
@@ -1761,6 +1763,7 @@ app.post("/requests", async (c) => {
     baseId: config.haveNManagementBaseId,
     tableId: config.su26ShiftRequestsTableId,
     fields,
+    typecast: true,
   });
 
   // Post-create race check: two concurrent submissions can both pass the

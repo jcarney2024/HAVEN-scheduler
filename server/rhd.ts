@@ -85,3 +85,69 @@ function dedupeById(people: PersonLite[]): PersonLite[] {
   }
   return out;
 }
+
+export type RhdDept = "SCTS" | "JCTS" | "CCRH";
+
+export type RhdCell = { onShift: boolean; shadow: boolean; available: boolean };
+
+/** Map an RHD grid cell to a normalized assignment. null = empty or unknown
+ *  (callers pre-check emptiness so they can report unknowns). `1` = on shift;
+ *  shadow + available tokens are recognized; everything else is unknown. */
+export function parseRhdCell(raw: string): RhdCell | null {
+  const code = raw.trim().toLowerCase().replace(/\s+/g, "");
+  if (!code) return null;
+  if (code === "1" || code === "1.0") return { onShift: true, shadow: false, available: false };
+  if (code === "s" || code === "shadow") return { onShift: false, shadow: true, available: false };
+  if (code === "a" || code === "available" || code === "avail") return { onShift: false, shadow: false, available: true };
+  return null;
+}
+
+export type RhdSheetPersonRow = {
+  name: string;
+  email: string;
+  dept: RhdDept;
+  returning: boolean;
+  licensedRN: boolean;
+  cells: Record<string, string>; // ISO date → raw cell
+};
+
+export type RhdDayPlan = { onShift: string[]; shadow: string[] };
+
+export type RhdImportPlan = {
+  people: { email: string; name: string; dept: RhdDept; returning: boolean; licensedRN: boolean }[];
+  perDeptDate: Record<RhdDept, Record<string, RhdDayPlan>>;
+  unknownCells: { email: string; date: string; raw: string }[];
+};
+
+export function buildRhdImportPlan(rows: RhdSheetPersonRow[], dates: string[]): RhdImportPlan {
+  const depts: RhdDept[] = ["SCTS", "JCTS", "CCRH"];
+  const perDeptDate = Object.fromEntries(
+    depts.map((d) => [d, Object.fromEntries(dates.map((iso) => [iso, { onShift: [], shadow: [] } as RhdDayPlan]))]),
+  ) as Record<RhdDept, Record<string, RhdDayPlan>>;
+
+  const people: RhdImportPlan["people"] = [];
+  const seen = new Set<string>();
+  const unknownCells: RhdImportPlan["unknownCells"] = [];
+
+  for (const row of rows) {
+    const email = row.email.trim().toLowerCase();
+    if (!seen.has(email)) {
+      seen.add(email);
+      people.push({ email, name: row.name, dept: row.dept, returning: row.returning, licensedRN: row.licensedRN });
+    }
+    for (const date of dates) {
+      const raw = row.cells[date] ?? "";
+      if (!raw.trim()) continue;
+      const cell = parseRhdCell(raw);
+      if (!cell) {
+        unknownCells.push({ email, date, raw });
+        continue;
+      }
+      const day = perDeptDate[row.dept][date];
+      if (cell.onShift) day.onShift.push(email);
+      if (cell.shadow) day.shadow.push(email);
+    }
+  }
+
+  return { people, perDeptDate, unknownCells };
+}

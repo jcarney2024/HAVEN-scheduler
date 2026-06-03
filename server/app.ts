@@ -894,9 +894,31 @@ app.post("/rhd/readiness", async (c) => {
   }
 
   const [allSchedule, attendingRows, clinicRows, allVolunteerApps, volunteerStaff] = await Promise.all([
-    listAll<ScheduleRowFields>({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId }),
-    listAll<RhdAttendingFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdAttendingsTableId }),
-    listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId }),
+    listAll<ScheduleRowFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.su26ScheduleTableId,
+      fields: ["Department", "Date", "Volunteers on Shift"],
+    }),
+    listAll<RhdAttendingFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.rhdAttendingsTableId,
+      fields: [
+        "Schedule Name",
+        "Full Name",
+        "IUD In",
+        "IUD Out",
+        "Nexplanon",
+        "GAC",
+        "EMB",
+        "Sees Male",
+        "Notes",
+      ],
+    }),
+    listAll<RhdClinicFields>({
+      baseId: config.haveNManagementBaseId,
+      tableId: config.rhdClinicsTableId,
+      fields: ["Date", "Attending", "Director on point", "Procedures Booked"],
+    }),
     listAll<VolunteerAppFields>({ baseId: config.volunteerAppsBaseId, tableId: config.volunteerAppsTableId, fields: ["NetID", "Link your record", "Spanish Proficiency Level"] }),
     listAll<StaffMirrorFields>({ baseId: config.volunteerAppsBaseId, tableId: config.volunteerAppsStaffTableId, fields: ["NetID"] }),
   ]);

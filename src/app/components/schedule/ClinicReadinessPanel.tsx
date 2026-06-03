@@ -88,15 +88,20 @@ export function ClinicReadinessPanel({
         <label className="flex items-center gap-1">
           Procedures booked:
           <input
+            key={`${readiness.date}:${readiness.proceduresBooked ?? ""}`}
             type="number" min={0} step={1}
-            value={readiness.proceduresBooked ?? ""}
+            defaultValue={readiness.proceduresBooked ?? ""}
             disabled={disabled}
-            onChange={(e) => {
+            onBlur={(e) => {
               const raw = e.target.value;
-              if (raw === "") return onChange({ proceduresBooked: null });
-              const n = e.target.valueAsNumber;
+              if (raw === "") {
+                if (readiness.proceduresBooked !== null) onChange({ proceduresBooked: null });
+                return;
+              }
+              const n = Number(raw);
               if (!Number.isFinite(n) || n < 0) return;
-              onChange({ proceduresBooked: Math.trunc(n) });
+              const next = Math.trunc(n);
+              if (next !== (readiness.proceduresBooked ?? null)) onChange({ proceduresBooked: next });
             }}
             className="w-16 border border-slate-300 rounded px-1 py-0.5 tabular-nums"
           />

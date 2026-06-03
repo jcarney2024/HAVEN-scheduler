@@ -106,6 +106,7 @@ describe("parseRhdCell", () => {
   });
   it("treats '1&on call' as on shift (the 1 wins)", () => {
     expect(parseRhdCell("1&on call")).toEqual({ onShift: true, shadow: false, available: false });
+    expect(parseRhdCell("1&amp;on call")).toEqual({ onShift: true, shadow: false, available: false });
   });
   it("matches verbose shadow tokens like 'SCTM SHADOW'", () => {
     expect(parseRhdCell("SCTM SHADOW ")).toEqual({ onShift: false, shadow: true, available: false });

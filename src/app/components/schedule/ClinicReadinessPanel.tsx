@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { Attending, ClinicReadiness, ProcedureKey, ProcedureStatus } from "@/api/types";
 
 const PROC_LABEL: Record<ProcedureKey, string> = {
@@ -21,6 +22,13 @@ export function ClinicReadinessPanel({
   disabled: boolean;
   onChange: (patch: { attendingId?: string | null; director?: string | null; proceduresBooked?: number | null }) => void;
 }) {
+  // Local draft so typing the director doesn't write to Airtable on every
+  // keystroke; commit on blur. Re-sync when the active date or persisted value changes.
+  const [directorDraft, setDirectorDraft] = useState(readiness.director ?? "");
+  useEffect(() => {
+    setDirectorDraft(readiness.director ?? "");
+  }, [readiness.date, readiness.director]);
+
   if (readiness.closed) {
     return (
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-500">
@@ -49,9 +57,13 @@ export function ClinicReadinessPanel({
           Director:
           <input
             type="text"
-            value={readiness.director ?? ""}
+            value={directorDraft}
             disabled={disabled}
-            onChange={(e) => onChange({ director: e.target.value || null })}
+            onChange={(e) => setDirectorDraft(e.target.value)}
+            onBlur={() => {
+              const v = directorDraft.trim() || null;
+              if (v !== (readiness.director ?? null)) onChange({ director: v });
+            }}
             className="w-20 border border-slate-300 rounded px-1 py-0.5"
           />
         </label>

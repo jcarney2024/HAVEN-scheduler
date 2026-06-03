@@ -9,6 +9,12 @@ import { loadConfig, type Config } from "./config.js";
 import { shapePublicSchedule } from "./public.js";
 import { withRoleMembersOnShift } from "./medteam.js";
 import {
+  computeClinicReadiness,
+  type Attending,
+  type ProcedureStatus,
+  type PersonLite,
+} from "./rhd.js";
+import {
   buildComplianceByPersonId,
   buildNonCompliantByDept,
   type ComplianceRow,
@@ -98,6 +104,21 @@ type ScheduleRowFields = {
   "Patients Booked"?: number;
 };
 
+type RhdAttendingFields = {
+  "Schedule Name"?: string;
+  "Full Name"?: string;
+  "IUD In"?: unknown; "IUD Out"?: unknown; "Nexplanon"?: unknown;
+  "GAC"?: unknown; "EMB"?: unknown; "Sees Male"?: unknown;
+  "Notes"?: string;
+};
+
+type RhdClinicFields = {
+  Date?: unknown;
+  Attending?: unknown;
+  "Director on point"?: string;
+  "Procedures Booked"?: number;
+};
+
 type ShiftRequestFields = {
   Department?: unknown;
   Requester?: unknown;
@@ -125,6 +146,9 @@ const MANAGES_OTHER_DEPTS: Record<string, string[]> = {
   SRHD: ["SCTS", "JCTS", "CCRH"],
   PCAR: ["SCTP", "JCTP"],
 };
+
+const RHD_DEPTS = ["SCTS", "JCTS", "CCRH"] as const;
+const DEFAULT_MAX_PROCEDURES_PER_CLINIC = 3;
 
 export const app = new Hono();
 app.use("*", cors());
@@ -347,6 +371,40 @@ function manageableDeptIdsFor(
     }
   }
   return out;
+}
+
+function resolveAppNetidStandalone(
+  direct: string | undefined,
+  linkFieldValue: unknown,
+  staffNetidById: Map<string, string>,
+): string {
+  if (direct && direct.trim()) return direct.trim().toLowerCase();
+  const linkedIds = toIdList(linkFieldValue);
+  for (const id of linkedIds) {
+    const nid = staffNetidById.get(id);
+    if (nid) return nid;
+  }
+  return "";
+}
+
+function procStatus(v: unknown): ProcedureStatus {
+  const s = selectName(v).trim().toLowerCase();
+  return s === "yes" ? "yes" : s === "no" ? "no" : "unknown";
+}
+
+function toAttending(row: AirtableRecord<RhdAttendingFields>): Attending {
+  const f = row.fields;
+  return {
+    id: row.id,
+    scheduleName: f["Schedule Name"] ?? "",
+    fullName: f["Full Name"] ?? "",
+    procedures: {
+      iudIn: procStatus(f["IUD In"]), iudOut: procStatus(f["IUD Out"]),
+      nexplanon: procStatus(f["Nexplanon"]), gac: procStatus(f["GAC"]),
+      emb: procStatus(f["EMB"]), seesMale: procStatus(f["Sees Male"]),
+    },
+    notes: f["Notes"] || undefined,
+  };
 }
 
 app.post(`/director/:netid`, async (c) => {
@@ -812,6 +870,143 @@ app.post(`/schedule/:deptId`, async (c) => {
       patientsBooked: assignmentsByDate.get(iso)?.patientsBooked ?? null,
     })),
   });
+});
+
+app.post("/rhd/readiness", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  if (!config.rhdAttendingsTableId || !config.rhdClinicsTableId) {
+    return c.json({ error: "RHD tables not configured" }, 400);
+  }
+  const { callerNetid, callerEmail } = (await c.req.json()) as { callerNetid?: string; callerEmail?: string };
+  if (!callerNetid || !callerEmail) return c.json({ error: "Missing caller" }, 400);
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  // Authorize before the heavy fan-out (matches /assignment, /submit, etc.):
+  // fetch only the roster, check access, then load the rest.
+  const allRoster = await listAll<Su26RosterFields>({ baseId: config.haveNManagementBaseId, tableId: config.su26RosterTableId });
+  const manageable = manageableDeptIdsFor(allRoster, caller.id);
+  const deptIdByName = new Map(allRoster.map((d) => [d.fields["Department Name"] ?? "", d.id]));
+  const rhdDeptIds = RHD_DEPTS.map((n) => deptIdByName.get(n)).filter((x): x is string => !!x);
+  if (!rhdDeptIds.some((id) => manageable.has(id))) {
+    return c.json({ error: "Caller not authorized for RHD" }, 403);
+  }
+
+  const [allSchedule, attendingRows, clinicRows, allVolunteerApps, volunteerStaff] = await Promise.all([
+    listAll<ScheduleRowFields>({ baseId: config.haveNManagementBaseId, tableId: config.su26ScheduleTableId }),
+    listAll<RhdAttendingFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdAttendingsTableId }),
+    listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId }),
+    listAll<VolunteerAppFields>({ baseId: config.volunteerAppsBaseId, tableId: config.volunteerAppsTableId, fields: ["NetID", "Link your record", "Spanish Proficiency Level"] }),
+    listAll<StaffMirrorFields>({ baseId: config.volunteerAppsBaseId, tableId: config.volunteerAppsStaffTableId, fields: ["NetID"] }),
+  ]);
+
+  const volunteerStaffNetidById = new Map<string, string>(
+    volunteerStaff.filter((s) => s.fields.NetID).map((s) => [s.id, (s.fields.NetID ?? "").toLowerCase()]),
+  );
+  const SPANISH_CONVERSATIONAL_PLUS = new Set(["Conversational", "Fluent (native)", "Fluent (non-native)"]);
+  const volSpanishByNetid = new Map<string, boolean>();
+  for (const r of allVolunteerApps) {
+    const nid = resolveAppNetidStandalone(r.fields.NetID, r.fields["Link your record"], volunteerStaffNetidById);
+    if (nid && SPANISH_CONVERSATIONAL_PLUS.has(selectName(r.fields["Spanish Proficiency Level"]))) volSpanishByNetid.set(nid, true);
+  }
+
+  const onShiftIdsByDeptDate = new Map<string, string[]>();
+  const everyId = new Set<string>();
+  for (const row of allSchedule) {
+    const depId = toIdList(row.fields.Department)[0];
+    const iso = normalizeVolunteerDate(selectName(row.fields.Date));
+    const deptName = RHD_DEPTS.find((n) => deptIdByName.get(n) === depId);
+    if (!deptName || !iso) continue;
+    const ids = toIdList(row.fields["Volunteers on Shift"]);
+    onShiftIdsByDeptDate.set(`${deptName}|${iso}`, ids);
+    ids.forEach((id) => everyId.add(id));
+  }
+  const peopleRows = everyId.size
+    ? await listAll<AllPeopleFields>({
+        baseId: config.haveNManagementBaseId, tableId: config.allPeopleTableId,
+        filterByFormula: `OR(${[...everyId].map((id) => `RECORD_ID() = '${id}'`).join(",")})`,
+        fields: ["NetID", "Contact Email", "Licensed RN", "Spanish Speaking"],
+      })
+    : [];
+  const liteById = new Map<string, PersonLite>(
+    peopleRows.map((p) => {
+      const netid = (p.fields.NetID ?? "").toLowerCase();
+      return [p.id, {
+        id: p.id,
+        email: (p.fields["Contact Email"] ?? "").toLowerCase(),
+        licensedRN: p.fields["Licensed RN"] === true,
+        spanishSpeaking: volSpanishByNetid.get(netid) === true || p.fields["Spanish Speaking"] === true,
+      }];
+    }),
+  );
+  const liteFor = (deptName: string, iso: string): PersonLite[] =>
+    (onShiftIdsByDeptDate.get(`${deptName}|${iso}`) ?? []).map((id) => liteById.get(id)).filter((x): x is PersonLite => !!x);
+
+  const attendings = attendingRows.map(toAttending);
+  const attendingById = new Map(attendings.map((a) => [a.id, a]));
+  const clinicByIso = new Map<string, AirtableRecord<RhdClinicFields>>();
+  for (const row of clinicRows) {
+    const iso = normalizeVolunteerDate(selectName(row.fields.Date));
+    if (iso) clinicByIso.set(iso, row);
+  }
+
+  const clinics = CANONICAL_DATES.map((iso) => {
+    const clinic = clinicByIso.get(iso);
+    const attId = clinic ? toIdList(clinic.fields.Attending)[0] : undefined;
+    return computeClinicReadiness({
+      date: iso,
+      attending: attId ? attendingById.get(attId) ?? null : null,
+      director: clinic?.fields["Director on point"] ?? null,
+      sctsOnShift: liteFor("SCTS", iso),
+      jctsOnShift: liteFor("JCTS", iso),
+      ccrhOnShift: liteFor("CCRH", iso),
+      proceduresBooked: typeof clinic?.fields["Procedures Booked"] === "number" ? clinic.fields["Procedures Booked"] : null,
+      maxProceduresPerClinic: DEFAULT_MAX_PROCEDURES_PER_CLINIC,
+    });
+  });
+
+  return c.json({ maxProceduresPerClinic: DEFAULT_MAX_PROCEDURES_PER_CLINIC, attendings, clinics });
+});
+
+app.post("/rhd/clinic", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  if (!config.rhdClinicsTableId) return c.json({ error: "RHD tables not configured" }, 400);
+  const body = (await c.req.json()) as {
+    callerNetid?: string; callerEmail?: string; date?: string;
+    attendingId?: string | null; director?: string | null; proceduresBooked?: number | null;
+  };
+  const { callerNetid, callerEmail, date } = body;
+  if (!callerNetid || !callerEmail || !date) return c.json({ error: "Missing required field" }, 400);
+  if (!(CANONICAL_DATES as readonly string[]).includes(date)) return c.json({ error: "Invalid date" }, 400);
+  const caller = await findPerson(config, callerNetid, callerEmail);
+  if (!caller) return c.json({ error: "Caller not verified" }, 403);
+
+  const allRoster = await listAll<Su26RosterFields>({ baseId: config.haveNManagementBaseId, tableId: config.su26RosterTableId });
+  const manageable = manageableDeptIdsFor(allRoster, caller.id);
+  const deptIdByName = new Map(allRoster.map((d) => [d.fields["Department Name"] ?? "", d.id]));
+  const rhdDeptIds = RHD_DEPTS.map((n) => deptIdByName.get(n)).filter((x): x is string => !!x);
+  if (!rhdDeptIds.some((id) => manageable.has(id))) return c.json({ error: "Caller not authorized for RHD" }, 403);
+
+  if (body.proceduresBooked != null) {
+    const n = body.proceduresBooked;
+    if (typeof n !== "number" || !Number.isFinite(n) || !Number.isInteger(n) || n < 0) return c.json({ error: "Invalid Procedures Booked" }, 400);
+  }
+
+  const clinics = await listAll<RhdClinicFields>({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId });
+  const existing = clinics.find((row) => normalizeVolunteerDate(selectName(row.fields.Date)) === date);
+  const fields: Record<string, unknown> = { Date: displayDate(date) };
+  if (body.attendingId !== undefined) fields["Attending"] = body.attendingId ? [body.attendingId] : [];
+  if (body.director !== undefined) fields["Director on point"] = body.director ?? "";
+  if (body.proceduresBooked !== undefined) fields["Procedures Booked"] = body.proceduresBooked;
+
+  if (existing) {
+    await patchRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, recordId: existing.id, fields });
+  } else {
+    await createRecord({ baseId: config.haveNManagementBaseId, tableId: config.rhdClinicsTableId, fields });
+  }
+  return c.json({ success: true });
 });
 
 app.post("/assignment", async (c) => {

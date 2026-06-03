@@ -5,6 +5,7 @@ import type {
   PublicSchedule,
   MyAssignmentsResponse,
   RequestsForDept,
+  RhdReadinessResponse,
 } from "./types";
 
 const BASE = "/api";
@@ -143,4 +144,21 @@ export const api = {
     method: "POST",
     body: JSON.stringify(input),
   }),
+  rhdReadiness: (callerNetid: string, callerEmail: string) =>
+    request<RhdReadinessResponse>("/rhd/readiness", {
+      method: "POST",
+      body: JSON.stringify({ callerNetid, callerEmail }),
+    }),
+  setRhdClinic: (input: {
+    callerNetid: string;
+    callerEmail: string;
+    date: string;
+    attendingId?: string | null;
+    director?: string | null;
+    proceduresBooked?: number | null;
+  }) =>
+    request<{ success: true }>("/rhd/clinic", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

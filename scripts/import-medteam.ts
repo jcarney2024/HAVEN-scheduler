@@ -7,6 +7,7 @@
  *   npm run import:medteam -- --file "Med Team Schedule Summer 2026.xlsx"
  *   npm run import:medteam -- --file "Med Team Schedule Summer 2026.xlsx" --apply
  */
+import { readFileSync } from "node:fs";
 import dotenv from "dotenv";
 import * as XLSX from "xlsx";
 import { createRecord, listAll, patchRecord, type AirtableRecord } from "../server/airtable.js";
@@ -76,7 +77,8 @@ async function main() {
   const config = loadConfig();
   if (!config) throw new Error("Missing Airtable config — check .env.local");
 
-  const wb = XLSX.readFile(FILE, { cellDates: true });
+  // Parse from a buffer (XLSX.readFile isn't reliably exposed under tsx/ESM).
+  const wb = XLSX.read(readFileSync(FILE), { cellDates: true });
 
   const allPeople = await listAll<{ "Contact Email"?: string; Name?: string }>({
     baseId: config.haveNManagementBaseId,
@@ -153,11 +155,13 @@ async function main() {
       const a = attrs.get(email);
       const id = toId(email);
       if (!a || !id) continue;
+      // Spanish Speaking is intentionally NOT written — it's derived live from
+      // application proficiency (see buildPerson). Only seed Returning here.
       await patchRecord({
         baseId: config.haveNManagementBaseId,
         tableId: config.allPeopleTableId,
         recordId: id,
-        fields: { "Spanish Speaking": a.spanish, "Returning Volunteer": a.returning },
+        fields: { "Returning Volunteer": a.returning },
       });
     }
 

@@ -6,6 +6,7 @@ import type {
   MyAssignmentsResponse,
   RequestsForDept,
   RhdReadinessResponse,
+  ComplianceCheckResponse,
 } from "./types";
 
 const BASE = "/api";
@@ -108,6 +109,8 @@ export const api = {
   viewList: () => request<PublicDeptListItem[]>("/view", { method: "GET" }),
   viewSchedule: (deptId: string) =>
     request<PublicSchedule>(`/view/${encodeURIComponent(deptId)}`, { method: "GET" }),
+  complianceCheck: (netid: string) =>
+    request<ComplianceCheckResponse>(`/compliance/${encodeURIComponent(netid)}`, { method: "GET" }),
   myAssignments: (callerNetid: string, callerEmail: string, opts?: { signIn?: boolean }) =>
     request<MyAssignmentsResponse>("/me/assignments", {
       method: "POST",

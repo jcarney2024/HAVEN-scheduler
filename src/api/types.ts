@@ -176,3 +176,15 @@ export type RhdReadinessResponse = {
   attendings: Attending[];
   clinics: ClinicReadiness[];
 };
+
+export type ComplianceCheckResponse =
+  | { found: false }
+  | {
+      found: true;
+      name: string;
+      netid: string;
+      contract: boolean;
+      training: boolean;
+      hipaaCompliant: boolean;
+      overallCompliant: boolean;
+    };

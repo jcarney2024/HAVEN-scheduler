@@ -5,23 +5,46 @@ import { api } from "@/api/client";
 import type { ComplianceCheckResponse } from "@/api/types";
 
 const HIPAA_UPLOAD_URL = "https://updatemyinfo.havenfreeclinic.com";
+const CONTRACT_URL = "https://airtable.com/appOq1yOiA1Lfzq8L/pagtBHXs01CPcOO5l/form";
+const MAKEUP_TRAINING_URL = "https://airtable.com/appOq1yOiA1Lfzq8L/pagzNM5jQ2SKmbVyI/form";
 
 type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "loaded"; data: ComplianceCheckResponse };
 
-function StatusRow({ label, ok }: { label: string; ok: boolean }) {
+function StatusRow({
+  label,
+  ok,
+  action,
+}: {
+  label: string;
+  ok: boolean;
+  /** Where to go to complete this item. Shown only when the item is not ok. */
+  action?: { href: string; label: string };
+}) {
   return (
-    <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+    <div className="flex items-center justify-between gap-3 py-3 border-b border-slate-100 last:border-0">
       <span className="font-medium text-slate-800">{label}</span>
       {ok ? (
-        <span className="flex items-center gap-1.5 text-green-600 font-semibold text-sm">
+        <span className="flex items-center gap-1.5 text-green-600 font-semibold text-sm shrink-0">
           <CheckCircle2 className="w-5 h-5" /> Complete
         </span>
       ) : (
-        <span className="flex items-center gap-1.5 text-red-600 font-semibold text-sm">
-          <XCircle className="w-5 h-5" /> Not yet
+        <span className="flex items-center gap-3 shrink-0">
+          {action && (
+            <a
+              href={action.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#0F4D92] font-semibold text-sm hover:underline whitespace-nowrap"
+            >
+              {action.label} →
+            </a>
+          )}
+          <span className="flex items-center gap-1.5 text-red-600 font-semibold text-sm">
+            <XCircle className="w-5 h-5" /> Not yet
+          </span>
         </span>
       )}
     </div>
@@ -55,8 +78,16 @@ function ComplianceResult({
       )}
 
       <div className="mb-2">
-        <StatusRow label="Volunteer Training" ok={data.training} />
-        <StatusRow label="Volunteer Contract" ok={data.contract} />
+        <StatusRow
+          label="Volunteer Training"
+          ok={data.training}
+          action={{ href: MAKEUP_TRAINING_URL, label: "Make-up training" }}
+        />
+        <StatusRow
+          label="Volunteer Contract"
+          ok={data.contract}
+          action={{ href: CONTRACT_URL, label: "Sign contract" }}
+        />
         <StatusRow label="HIPAA Certificate" ok={data.hipaaCompliant} />
       </div>
 

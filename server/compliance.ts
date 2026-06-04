@@ -62,3 +62,38 @@ export function buildNonCompliantByDept(args: {
   }
   return out;
 }
+
+export type VolunteerComplianceResult = {
+  contract: boolean;
+  training: boolean;
+  hipaaCompliant: boolean;
+  overallCompliant: boolean;
+  /** Failing items in UI order: training, contract, hipaa. */
+  missing: ("contract" | "training" | "hipaa")[];
+};
+
+/**
+ * Volunteer-facing compliance verdict from the three items a volunteer can act
+ * on: Volunteer Training, Volunteer Contract, and the HIPAA certificate.
+ * HIPAA is compliant ONLY when the status is exactly "Compliant"; any other
+ * value (including blank/unset) is treated as not compliant so the upload CTA
+ * shows rather than a false green.
+ */
+export function evaluateVolunteerCompliance(input: {
+  contract: boolean;
+  training: boolean;
+  hipaaStatus: string;
+}): VolunteerComplianceResult {
+  const hipaaCompliant = input.hipaaStatus.trim() === "Compliant";
+  const missing: ("contract" | "training" | "hipaa")[] = [];
+  if (!input.training) missing.push("training");
+  if (!input.contract) missing.push("contract");
+  if (!hipaaCompliant) missing.push("hipaa");
+  return {
+    contract: input.contract,
+    training: input.training,
+    hipaaCompliant,
+    overallCompliant: input.contract && input.training && hipaaCompliant,
+    missing,
+  };
+}

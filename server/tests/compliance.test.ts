@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildComplianceByPersonId,
   buildNonCompliantByDept,
+  evaluateVolunteerCompliance,
   type ComplianceRow,
   type NonCompliantVolunteer,
 } from "../compliance";
@@ -76,5 +77,40 @@ describe("buildNonCompliantByDept", () => {
     expect(result.get("d1")).toEqual([
       { id: "vX", name: "vX", missing: ["contract", "training"] },
     ]);
+  });
+});
+
+describe("evaluateVolunteerCompliance", () => {
+  it("is fully compliant when all three are satisfied", () => {
+    const r = evaluateVolunteerCompliance({ contract: true, training: true, hipaaStatus: "Compliant" });
+    expect(r.contract).toBe(true);
+    expect(r.training).toBe(true);
+    expect(r.hipaaCompliant).toBe(true);
+    expect(r.overallCompliant).toBe(true);
+    expect(r.missing).toEqual([]);
+  });
+
+  it("treats a blank HIPAA status as not compliant", () => {
+    const r = evaluateVolunteerCompliance({ contract: true, training: true, hipaaStatus: "" });
+    expect(r.hipaaCompliant).toBe(false);
+    expect(r.overallCompliant).toBe(false);
+    expect(r.missing).toEqual(["hipaa"]);
+  });
+
+  it("treats 'Not Compliant' (or any non-'Compliant' value) as not compliant", () => {
+    expect(evaluateVolunteerCompliance({ contract: true, training: true, hipaaStatus: "Not Compliant" }).hipaaCompliant).toBe(false);
+    expect(evaluateVolunteerCompliance({ contract: true, training: true, hipaaStatus: "Pending" }).hipaaCompliant).toBe(false);
+  });
+
+  it("reports each missing item in UI order (training, contract, hipaa)", () => {
+    const r = evaluateVolunteerCompliance({ contract: false, training: false, hipaaStatus: "Not Compliant" });
+    expect(r.overallCompliant).toBe(false);
+    expect(r.missing).toEqual(["training", "contract", "hipaa"]);
+  });
+
+  it("flags only the contract when training + hipaa are fine", () => {
+    const r = evaluateVolunteerCompliance({ contract: false, training: true, hipaaStatus: "Compliant" });
+    expect(r.missing).toEqual(["contract"]);
+    expect(r.overallCompliant).toBe(false);
   });
 });

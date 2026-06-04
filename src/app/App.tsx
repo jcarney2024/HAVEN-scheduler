@@ -27,7 +27,6 @@ function initialStepFromUrl(): Step {
 export default function App() {
   const [step, setStep] = useState<Step>(initialStepFromUrl());
   const [identity, setIdentity] = useState<DirectorIdentity | null>(null);
-  const [viewAutoSignIn, setViewAutoSignIn] = useState(false);
   const [complianceNetid, setComplianceNetid] = useState<string | null>(
     typeof window === "undefined" ? null : complianceNetidFromPath(window.location.pathname),
   );
@@ -81,8 +80,7 @@ export default function App() {
     setStep("lookup");
   }
 
-  function handleOpenView(opts?: { autoSignIn?: boolean }) {
-    setViewAutoSignIn(opts?.autoSignIn === true);
+  function handleOpenView() {
     setStep("view");
   }
 
@@ -161,9 +159,7 @@ export default function App() {
                 onIdentityRefresh={refreshIdentity}
               />
             )}
-            {step === "view" && (
-              <PublicScheduleView key="view" autoSignIn={viewAutoSignIn} />
-            )}
+            {step === "view" && <PublicScheduleView key="view" />}
             {step === "compliance" && complianceNetid && (
               <ComplianceCheck key="compliance" netid={complianceNetid} />
             )}

@@ -4,15 +4,11 @@ import { api } from "@/api/client";
 import type { MyAssignmentsResponse } from "@/api/types";
 
 export function SignInToRequest({
-  autoOpen = false,
   onSignedIn,
 }: {
-  /** When true, render the form expanded by default — used when the user clicked
-   *  "Update my availability" on the landing and shouldn't have to hunt for sign-in. */
-  autoOpen?: boolean;
   onSignedIn: (data: MyAssignmentsResponse, credentials: { netid: string; email: string }) => void;
 }) {
-  const [open, setOpen] = useState(autoOpen);
+  const [open, setOpen] = useState(false);
   const [netid, setNetid] = useState("");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -34,10 +30,9 @@ export function SignInToRequest({
   if (!open) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-6">
-        <h2 className="text-lg font-semibold mb-2">Drop or swap a shift, or update your availability</h2>
+        <h2 className="text-lg font-semibold mb-2">Drop or swap a shift</h2>
         <p className="text-sm text-slate-600 mb-3">
-          Sign in to request a drop/swap on one of your shifts, or to update which Saturdays
-          you're available since you first applied.
+          Sign in to request a drop or swap on one of your shifts.
         </p>
         <button
           type="button"

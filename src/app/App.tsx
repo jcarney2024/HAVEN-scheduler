@@ -7,18 +7,30 @@ import { LOGO_URL, BG_IMAGE } from "./constants";
 import { LandingCards } from "./components/LandingCards";
 import { ScheduleBuilder } from "./components/ScheduleBuilder";
 import { PublicScheduleView } from "./components/view/PublicScheduleView";
+import { ComplianceCheck } from "./components/ComplianceCheck";
 
-type Step = "loading" | "lookup" | "schedule" | "view";
+type Step = "loading" | "lookup" | "schedule" | "view" | "compliance";
+
+/** Returns the decoded NetID when the path is /compliance/<netid>, else null. */
+function complianceNetidFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/compliance\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 function initialStepFromUrl(): Step {
   if (typeof window === "undefined") return "loading";
-  return window.location.pathname === "/view" ? "view" : "loading";
+  if (window.location.pathname === "/view") return "view";
+  if (complianceNetidFromPath(window.location.pathname)) return "compliance";
+  return "loading";
 }
 
 export default function App() {
   const [step, setStep] = useState<Step>(initialStepFromUrl());
   const [identity, setIdentity] = useState<DirectorIdentity | null>(null);
   const [viewAutoSignIn, setViewAutoSignIn] = useState(false);
+  const [complianceNetid, setComplianceNetid] = useState<string | null>(
+    typeof window === "undefined" ? null : complianceNetidFromPath(window.location.pathname),
+  );
 
   useEffect(() => {
     if (step === "loading") {
@@ -28,8 +40,10 @@ export default function App() {
     return undefined;
   }, [step]);
 
-  // Keep URL in sync so /view is shareable + back button works.
+  // Keep URL in sync so /view is shareable + back button works. The
+  // /compliance/<netid> deep link manages its own URL — never rewrite it.
   useEffect(() => {
+    if (step === "compliance") return;
     const target = step === "view" ? "/view" : "/";
     if (window.location.pathname !== target) {
       window.history.pushState({}, "", target);
@@ -39,9 +53,19 @@ export default function App() {
   // Respond to browser back/forward.
   useEffect(() => {
     function onPop() {
-      const next: Step = window.location.pathname === "/view" ? "view" : "lookup";
-      setStep(next);
-      if (next === "lookup") setIdentity(null);
+      const path = window.location.pathname;
+      const cNetid = complianceNetidFromPath(path);
+      if (path === "/view") {
+        setStep("view");
+        return;
+      }
+      if (cNetid) {
+        setComplianceNetid(cNetid);
+        setStep("compliance");
+        return;
+      }
+      setStep("lookup");
+      setIdentity(null);
     }
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -139,6 +163,9 @@ export default function App() {
             )}
             {step === "view" && (
               <PublicScheduleView key="view" autoSignIn={viewAutoSignIn} />
+            )}
+            {step === "compliance" && complianceNetid && (
+              <ComplianceCheck key="compliance" netid={complianceNetid} />
             )}
           </AnimatePresence>
         </main>

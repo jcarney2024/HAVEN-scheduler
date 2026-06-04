@@ -17,6 +17,7 @@ import {
 import {
   buildComplianceByPersonId,
   buildNonCompliantByDept,
+  evaluateVolunteerCompliance,
   type ComplianceRow,
 } from "./compliance.js";
 
@@ -24,6 +25,7 @@ type AllPeopleFields = {
   NetID?: string;
   "Contact Email"?: string;
   Name?: string;
+  "HIPAA Compliance Status"?: string;
   // Director-controlled overrides; comma-separated display dates ("May 30th, June 6th, ...").
   // If non-empty, these REPLACE the applicant-base availability for this person+kind.
   "SU 26 — Available as Director"?: string;
@@ -237,6 +239,50 @@ app.get("/view/:deptId", async (c) => {
   return c.json(shaped);
 });
 
+// Public, no auth. A volunteer opens /compliance/:netid to self-check whether
+// their Training, Contract, and HIPAA certificate are on file. Returns coarse
+// booleans only (plus name) — see the design spec for the accepted tradeoff.
+app.get("/compliance/:netid", async (c) => {
+  const config = await getConfig();
+  if (!config) return c.json({ error: "Not configured" }, 400);
+  const netid = c.req.param("netid");
+  if (!netid) return c.json({ error: "Missing netid" }, 400);
+
+  const person = await findPersonByNetid(config, netid);
+  if (!person) return c.json({ found: false });
+
+  const allCompliance = await listAll<ComplianceFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.complianceTableId,
+    fields: ["Names", "Volunteer Contract", "Volunteer Training"],
+  });
+  const complianceByPersonId = buildComplianceByPersonId(
+    allCompliance.map(
+      (row): ComplianceRow => ({
+        personIds: toIdList(row.fields.Names),
+        contract: row.fields["Volunteer Contract"] === true,
+        training: row.fields["Volunteer Training"] === true,
+      }),
+    ),
+  );
+  const flags = complianceByPersonId.get(person.id) ?? { contract: false, training: false };
+  const result = evaluateVolunteerCompliance({
+    contract: flags.contract,
+    training: flags.training,
+    hipaaStatus: selectName(person.fields["HIPAA Compliance Status"]),
+  });
+
+  return c.json({
+    found: true,
+    name: person.fields.Name ?? "",
+    netid: person.fields.NetID ?? "",
+    contract: result.contract,
+    training: result.training,
+    hipaaCompliant: result.hipaaCompliant,
+    overallCompliant: result.overallCompliant,
+  });
+});
+
 async function getConfig(): Promise<Config | null> {
   return loadConfig();
 }
@@ -323,6 +369,20 @@ async function findPerson(config: Config, netid: string, email: string) {
     baseId: config.haveNManagementBaseId,
     tableId: config.allPeopleTableId,
     filterByFormula: formula,
+    pageSize: 1,
+  });
+  return records[0] ?? null;
+}
+
+// NetID-only person lookup for the public /compliance/:netid self-check. Unlike
+// findPerson (which also requires the Contact Email), this trusts the NetID
+// alone — an explicit, documented product decision (see the design spec).
+async function findPersonByNetid(config: Config, netid: string) {
+  const safeNetid = escapeFormulaString(netid.toLowerCase());
+  const records = await listAll<AllPeopleFields>({
+    baseId: config.haveNManagementBaseId,
+    tableId: config.allPeopleTableId,
+    filterByFormula: `LOWER({NetID}) = '${safeNetid}'`,
     pageSize: 1,
   });
   return records[0] ?? null;

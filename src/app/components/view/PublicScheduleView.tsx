@@ -13,9 +13,8 @@ import { SaturdayView } from "../schedule/SaturdayView";
 import { displayDate } from "./displayDate";
 import { SignInToRequest } from "./SignInToRequest";
 import { MyAssignments } from "./MyAssignments";
-import { MyAvailability } from "./MyAvailability";
 
-export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolean } = {}) {
+export function PublicScheduleView() {
   const [depts, setDepts] = useState<PublicDeptListItem[] | null>(null);
   const [deptId, setDeptId] = useState<string>("");
   const [schedule, setSchedule] = useState<PublicSchedule | null>(null);
@@ -124,21 +123,13 @@ export function PublicScheduleView({ autoSignIn = false }: { autoSignIn?: boolea
       )}
 
       {signedIn ? (
-        <>
-          <MyAssignments
-            data={signedIn.data}
-            credentials={signedIn.credentials}
-            onChanged={refetchAssignments}
-          />
-          <MyAvailability
-            data={signedIn.data}
-            credentials={signedIn.credentials}
-            onSaved={refetchAssignments}
-          />
-        </>
+        <MyAssignments
+          data={signedIn.data}
+          credentials={signedIn.credentials}
+          onChanged={refetchAssignments}
+        />
       ) : (
         <SignInToRequest
-          autoOpen={autoSignIn}
           onSignedIn={(data, credentials) => setSignedIn({ data, credentials })}
         />
       )}

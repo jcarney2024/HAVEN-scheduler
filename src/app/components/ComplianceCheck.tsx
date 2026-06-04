@@ -49,7 +49,7 @@ function ComplianceResult({
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-800 font-medium">
-            Action needed — a few items still need to be completed.
+            Action needed — please finish the items marked “Not yet” below.
           </p>
         </div>
       )}

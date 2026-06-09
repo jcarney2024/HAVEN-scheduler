@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type { Attending, ClinicReadiness, ProcedureKey, ProcedureStatus } from "@/api/types";
 
 const PROC_LABEL: Record<ProcedureKey, string> = {
@@ -113,22 +114,24 @@ export function ClinicReadinessPanel({
 
       {readiness.emails.length > 0 && (
         <button
-        type="button"
-        onClick={async () => {
-          const text = readiness.emails.join(", ");
-          try {
-            await navigator.clipboard.writeText(text);
-            alert("Email list copied!");
-          } catch {
-            prompt("Copy the email list below:", text);
-          }
-        }}
-        className="text-[11px] text-[#0F4D92] underline cursor-pointer"
-        title={readiness.emails.join(", ")}
+          type="button"
+          onClick={async () => {
+            const text = readiness.emails.join(", ");
+            try {
+              await navigator.clipboard.writeText(text);
+              toast.success("Email list copied!");
+            } catch {
+              // Clipboard API unavailable (insecure context / older browser) —
+              // fall back to a prompt so the list can still be copied manually.
+              prompt("Copy the email list below:", text);
+            }
+          }}
+          className="text-[11px] text-[#0F4D92] underline cursor-pointer"
+          title={readiness.emails.join(", ")}
         >
           Copy clinic email list ({readiness.emails.length})
-          </button>
-        )}
+        </button>
+      )}
     </div>
   );
 }

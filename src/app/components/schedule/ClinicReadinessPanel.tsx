@@ -113,14 +113,22 @@ export function ClinicReadinessPanel({
 
       {readiness.emails.length > 0 && (
         <button
-          type="button"
-          onClick={() => navigator.clipboard?.writeText(readiness.emails.join(", "))}
-          className="text-[11px] text-[#0F4D92] underline"
-          title={readiness.emails.join(", ")}
+        type="button"
+        onClick={async () => {
+          const text = readiness.emails.join(", ");
+          try {
+            await navigator.clipboard.writeText(text);
+            alert("Email list copied!");
+          } catch {
+            prompt("Copy the email list below:", text);
+          }
+        }}
+        className="text-[11px] text-[#0F4D92] underline cursor-pointer"
+        title={readiness.emails.join(", ")}
         >
           Copy clinic email list ({readiness.emails.length})
-        </button>
-      )}
+          </button>
+        )}
     </div>
   );
 }
